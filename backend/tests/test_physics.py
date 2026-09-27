@@ -17,7 +17,6 @@ import pytest
 from conftest import as_utc
 from services.biomass_service import (
     CARBON_FRACTION,
-    CHAVE_B0,
     CHAVE_B1,
     CHAVE_PREFACTOR,
     CO2_PER_CARBON,
@@ -70,12 +69,23 @@ class TestEphemeris:
 
     def test_solar_noon_azimuth_is_near_cardinal_directions(self):
         """At solar noon the sun is due south (N hemi) or due north (S hemi)."""
-        # Ankara, summer solstice. Solar noon at 32.85E is 09:48 UTC.
-        pos = calculate_solar_position(
-            39.9207, 32.8541, dt.datetime(2026, 6, 21, 9, 48, tzinfo=dt.timezone.utc)
+        # Ankara, summer solstice. Solar noon at 32.85E is ~09:47 UTC, so the sun
+        # is due south (within 2 deg of 180) there.
+        at_noon = calculate_solar_position(
+            39.9207, 32.8541, dt.datetime(2026, 6, 21, 9, 47, tzinfo=dt.timezone.utc)
         )
-        # 188.1 deg in the original fixture, which the doc recorded as 138.5.
-        assert abs(pos["azimuth_deg"] - 188.0) < 5.0
+        assert abs(at_noon["azimuth_deg"] - 180.0) < 3.0
+
+        # 13 minutes later, pvlib gives 187.74 deg. The original fixture claimed
+        # 138.5 deg, which is ~49 deg away and cannot occur at any time of day
+        # at that longitude.
+        later = calculate_solar_position(
+            39.9207, 32.8541, dt.datetime(2026, 6, 21, 10, 0, tzinfo=dt.timezone.utc)
+        )
+        assert abs(later["azimuth_deg"] - 187.74) < 1.0
+        assert abs(later["azimuth_deg"] - 138.5) > 45.0, (
+            "the documented Ankara value is ~49 deg from the true azimuth"
+        )
 
     def test_morning_sun_east_of_solar_noon(self):
         """Morning sun must have a SMALLER azimuth than the same-day noon sun."""
@@ -171,7 +181,15 @@ class TestShadowCoherence:
                 f"{f['scenario_id']} expected quarantine, got {result.verdict.value}"
             )
             assert result.is_fraud is True
-            assert result.angular_error_deg > 90.0
+            # Attack-class-aware bar, mirroring the generator. A falsified CLOCK
+            # inverts the sun by ~180 deg; a falsified LOCATION is bounded by the
+            # divergence between the two sites' solar paths, which for Kilifi vs
+            # Ankara maxes out at ~88.5 deg over an entire day.
+            bar = f.get("fraud_min_error_deg", 90.0)
+            assert result.angular_error_deg >= bar, (
+                f"{f['scenario_id']} error {result.angular_error_deg} below bar {bar}"
+            )
+            assert result.angular_error_deg > SHADOW_COHERENCE_TOLERANCE_DEG * 3
 
     def test_abstention_fixtures(self, abstain_fixtures):
         for f in abstain_fixtures:
@@ -183,14 +201,22 @@ class TestShadowCoherence:
             )
             assert result.verdict.value == f["expected_verdict"], f["scenario_id"]
 
-    def test_low_sun_abstains_rather_than_accusing(self):
-        """A 1.5 deg sun cannot support an automated fraud verdict."""
-        ts = dt.datetime(2026, 9, 22, 5, 35, tzinfo=dt.timezone.utc)
-        pos = calculate_solar_position(-1.2921, 36.8219, ts)
-        assert pos["elevation_deg"] < MIN_SHADOW_ELEVATION_DEG
+    def test_low_sun_abstains_rather_than_accusing(self, abstain_fixtures):
+        """A sun too low to cast a usable shadow cannot support a fraud verdict.
+
+        The timestamp comes from the generated fixture, which PROBES for a ~5 deg
+        dawn. A hand-written 05:35 UTC was tried first and put the equatorial sun
+        32 deg up, so the scenario tested nothing.
+        """
+        f = next(x for x in abstain_fixtures if x["expected_verdict"] == "REVIEW_LOW_SUN_UNDETERMINED")
+        ts = as_utc(f["timestamp_utc"])
+        pos = calculate_solar_position(f["latitude"], f["longitude"], ts)
+        assert 0.0 <= pos["elevation_deg"] < MIN_SHADOW_ELEVATION_DEG, (
+            f"probe landed at {pos['elevation_deg']} deg, not in the abstention band"
+        )
 
         result = verify_shadow_coherence(
-            -1.2921, 36.8219, ts, expected_shadow_azimuth(pos["azimuth_deg"])
+            f["latitude"], f["longitude"], ts, f["observed_shadow_azimuth_deg"]
         )
         assert result.verdict == ShadowVerdict.REVIEW_LOW_SUN
         assert result.is_fraud is False
@@ -259,17 +285,21 @@ class TestShadowCoherence:
 
 
 # =========================================================================== #
-# 4. Allometric carbon — the 8.72x correction
+# 4. Allometric carbon — Chave et al. (2014) Eq. 4, coefficient verified
 # =========================================================================== #
 
 
 class TestAllometricCarbon:
-    def test_prefactor_matches_chave_reference(self):
-        """exp(-0.533) ~= 0.5868. The docs' 0.0673 was wrong by 8.72x."""
-        assert CHAVE_PREFACTOR == pytest.approx(0.5868, abs=0.0005)
-        assert CHAVE_PREFACTOR == pytest.approx(math.exp(CHAVE_B0))
-        # Explicitly encode the regression we are guarding against.
-        assert CHAVE_PREFACTOR / 0.0673 == pytest.approx(8.72, rel=0.01)
+    """Chave et al. (2014) Eq. 4: AGB = 0.0673 * (WD * H * D^2) ** 0.976.
+
+    The prefactor was briefly "corrected" to exp(-0.533) and then reverted: the
+    published coefficient IS 0.0673, per the R BIOMASS package reference
+    implementation. These tests pin the verified form so the detour cannot recur.
+    """
+
+    def test_prefactor_matches_published_chave_2014_eq4(self):
+        assert CHAVE_PREFACTOR == 0.0673
+        assert CHAVE_B1 == 0.976
 
     def test_agb_matches_chave_formula_independently(self):
         """Recompute from the published equation, not from our own constant."""
@@ -279,21 +309,44 @@ class TestAllometricCarbon:
         result = calculate_allometric_carbon(
             canopy_area_m2=area_m2, mean_height_m=height, wood_density_g_cm3=rho
         )
-        reference_agb = math.exp(-0.533 + 0.976 * math.log(rho * dbh**2 * height))
-        assert result.agb_kg == pytest.approx(reference_agb, rel=0.01)
+        reference_agb = 0.0673 * ((rho * dbh**2 * height) ** 0.976)
+        assert result.agb_kg == pytest.approx(reference_agb, rel=0.001)
 
-    def test_worked_example_reproduces_the_correction(self):
-        """100 m^2 canopy, 4 m, rho 0.58 -> 0.8762 tCO2e, not 0.1005."""
+    def test_result_is_plausible_against_stem_geometry(self):
+        """Guards against a coefficient that is out by an order of magnitude.
+
+        AGB cannot be wildly inconsistent with the stem's own wood volume. The
+        perfect-cylinder model pi/4 * D^2 * H * rho is crude, but an allometric
+        regression fitted to 4,004 harvested trees should land within a factor
+        of a few of it. This is the test that would have caught the reverted
+        exp(-0.533) change, which produced 6.7x the cylinder mass at every DBH.
+        """
+        rho, dbh, height = 0.45, 6.8, 3.9
         result = calculate_allometric_carbon(
-            canopy_area_m2=100.0, mean_height_m=4.0, wood_density_g_cm3=0.58
+            canopy_area_m2=11.29,
+            mean_height_m=height,
+            wood_density_g_cm3=rho,
+            measured_dbh_cm=dbh,
         )
-        assert result.estimated_dbh_cm == pytest.approx(21.0, abs=0.01)
-        assert result.co2e_metric_tons == pytest.approx(0.8762, rel=0.01)
+        cylinder_kg = (math.pi / 4) * (dbh / 100) ** 2 * height * rho * 1000
+        ratio = result.agb_kg / cylinder_kg
+        assert 0.2 < ratio < 5.0, (
+            f"AGB/cylinder ratio {ratio:.2f} is implausible; the coefficient is "
+            "probably wrong"
+        )
 
-        wrong = 0.0673 * ((0.58 * 21.0**2 * 4.0) ** 0.976)
-        wrong_tco2e = wrong * CARBON_FRACTION * CO2_PER_CARBON / 1000.0
-        assert wrong_tco2e == pytest.approx(0.1005, rel=0.02)
-        assert result.co2e_metric_tons / wrong_tco2e == pytest.approx(8.72, rel=0.02)
+    def test_worked_example_sapling(self):
+        """A 3.9 m Rhizophora sapling: ~4.9 kg AGB, ~0.0085 tCO2e."""
+        result = calculate_allometric_carbon(
+            canopy_area_m2=11.29,
+            mean_height_m=3.9,
+            wood_density_g_cm3=0.45,
+            species_name="Rhizophora mucronata",
+            measured_dbh_cm=6.8,
+        )
+        assert result.estimated_dbh_cm == 6.8
+        assert result.agb_kg == pytest.approx(4.91, rel=0.02)
+        assert result.co2e_metric_tons == pytest.approx(0.00847, rel=0.02)
 
     def test_measured_dbh_bypasses_the_proxy(self):
         result = calculate_allometric_carbon(
@@ -312,8 +365,11 @@ class TestAllometricCarbon:
         per_ha = calculate_allometric_carbon(
             canopy_area_m2=25.0, mean_height_m=4.0, stand_area_ha=1.0, stems_per_hectare=400
         )
+        # co2e_metric_tons is rounded to 4 dp before return, so on a value
+        # around 0.026 that is ~0.2% precision; scaling by 400 needs a
+        # correspondingly looser tolerance than the un-rounded figure would.
         assert per_ha.co2e_metric_tons == pytest.approx(
-            per_stem.co2e_metric_tons * 400, rel=0.001
+            per_stem.co2e_metric_tons * 400, rel=0.01
         )
 
     def test_carbon_and_co2_factors(self):
@@ -326,7 +382,7 @@ class TestAllometricCarbon:
     def test_equation_is_recorded_in_the_estimate(self):
         result = calculate_allometric_carbon(canopy_area_m2=100.0, mean_height_m=4.0)
         assert "Chave" in result.equation
-        assert str(CHAVE_B1) in result.equation
+        assert "0.0673" in result.equation
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -365,10 +421,16 @@ class TestVM0047Uncertainty:
         assert result.discount_applied_pct == 0.0
 
     def test_discount_above_threshold(self):
-        result = apply_vm0047_uncertainty_discount(100.0, 25.0)
-        assert result.discount_applied_pct == pytest.approx(10.0)
-        assert result.net_certified_tco2e == pytest.approx(90.0)
+        # 18% sits between the 15% trigger and the 22.5% severe-precision line.
+        result = apply_vm0047_uncertainty_discount(100.0, 18.0)
+        assert result.discount_applied_pct == pytest.approx(3.0)
+        assert result.net_certified_tco2e == pytest.approx(97.0)
         assert result.compliance_status == ComplianceStatus.DISCOUNT_APPLIED
+
+    def test_discount_is_linear_above_threshold(self):
+        for err, expected_discount in ((18.0, 3.0), (25.0, 10.0), (40.0, 25.0)):
+            result = apply_vm0047_uncertainty_discount(100.0, err)
+            assert result.discount_applied_pct == pytest.approx(expected_discount)
 
     def test_severe_imprecision_is_flagged(self):
         result = apply_vm0047_uncertainty_discount(100.0, 40.0)

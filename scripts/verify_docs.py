@@ -63,19 +63,14 @@ RULES: list = [
     ),
     Rule(
         "BIOMASS-001",
-        "The Chave prefactor 0.0673 as a live constant. The correct value is "
-        "exp(-0.533) ~= 0.5868; 0.0673 under-reports carbon by 8.72x.",
-        r"0\.0673\s*\*\s*\(\(|=\s*0\.0673\b",
+        "A prefactor claiming to be exp(-0.533) ~= 0.5868 for Chave allometry. "
+        "That value is WRONG. Chave et al. (2014) Eq. 4 is "
+        "AGB = 0.0673*(WD*H*D^2)^0.976, per the R BIOMASS package reference "
+        "implementation. This rule exists because the wrong value was written "
+        "into the spec, 'corrected' to a second wrong value, and only caught by "
+        "external verification — see README.md.",
+        r"exp\(-0\.533\)|CHAVE_B0|e\^\{-0\.533\}|0\.5868",
         scope=(),
-    ),
-    Rule(
-        "BIOMASS-002",
-        "A biomass/carbon figure asserted as a headline number. The docs claimed "
-        "+6.84 tCO2e/ha before the allometric equation was corrected, so any such "
-        "figure must be labelled as derived from the corrected Chave equation.",
-        r"6\.84\s*tCO2e|tCO2e\s*/\s*ha",
-        scope=(),
-        allow_context=("CORRECTION", "advertises", "Had that figure", "defect"),
     ),
     Rule(
         "VEGIDX-001",

@@ -35,7 +35,7 @@ EXECUTION-PLAN.md   Rubric-first build order, with cut list
 backend/
   services/    Pure computational units. No FastAPI, no Cloudinary imports.
     solar_service.py      pvlib ephemeris -> shadow-coherence verdict
-    biomass_service.py    Chave 2014 allometry -> tCO2e -> VM0047 discount
+    biomass_service.py    Chave 2014 Eq.4 allometry -> tCO2e -> VM0047 discount
     forgery_service.py    Laplacian + FFT + Moire synthetic/screen detection
     dedup_service.py      pHash corpus, resize/recompress invariant
   core/        Config, auth, Cloudinary client
@@ -54,47 +54,70 @@ Every service is independently testable with `pytest` and no credentials.
 
 ## The three findings that shaped this codebase
 
-The specification suite was audited before any code was written. Three defects
-were material enough to change the implementation, and all three are now
-regression-tested.
+The specification suite was audited before any code was written, and again
+against live reference implementations while the code was being written. Two
+defects were real. One "defect" was me.
 
-### 1. The allometric constant understated carbon by 8.72×
-
-The original equation used a prefactor of `0.0673` and was described as
-implementing Chave et al. (2014) pantropical allometry. The published regression
-is `ln(AGB) = -0.533 + 0.976·ln(ρD²H)`, so the prefactor is
-`exp(-0.533) ≈ 0.5868`.
-
-For a 100 m² canopy at 4 m height: original `0.1005 tCO₂e`, correct `0.8762 tCO₂e`.
-
-This is a commercial defect, not an academic one — the platform would have
-systematically under-credited every project it certified.
-→ `services/biomass_service.py`, tested in `test_physics.py::TestAllometricCarbon`.
-
-### 2. Every hand-written solar test vector was wrong
+### 1. Every hand-written solar test vector was wrong
 
 Four vectors in the spec's test suite were all outside their own stated
 tolerances, and one was physically impossible: Ankara, 2026-06-21T10:00Z was
-documented at 138.5° when solar noon there is 09:48 UTC, so the azimuth **must**
-be ≈188°.
+documented at 138.5° when the sun is essentially on the meridian there, giving
+187.74° — a 49.24° error that cannot occur at any time of day at that longitude.
 
 Worse, the flagship "legitimate photo" demo fixture cleared the 12° fraud
-threshold by **1.1° of margin** — one refactor away from disqualifying a genuine
-planting, live, on stage.
+threshold by only **2.56° of margin** — one refactor away from disqualifying a
+genuine planting, live, on stage.
 
 Fixtures are now *generated* from `pvlib` and the generator **refuses to write**
-if any genuine case clears the fraud threshold by under 5°.
+if any genuine case clears the fraud threshold by under 5°. It also probes for
+the solar conditions each scenario actually needs, after three hand-picked
+timestamps turned out to test the wrong thing (a Berlin "genuine" case that had
+dropped below the abstention gate; a Nairobi "dawn" case with the sun 32° up;
+a Pretoria case at local midnight).
 → `scripts/gen_solar_fixtures.py`; CI gate `make fixtures-check`.
 
-### 3. The spec's written derivation contradicted its own code
+### 2. The spec's written derivation contradicted its own code
 
 The solar azimuth expression printed in the design document was not the NOAA
-form and did not agree with the implementation beside it. The code was right; the
-math was wrong — the worst failure mode, because a reviewer concludes the physics
-is unsound when it is not.
+form and did not agree with the implementation beside it. The code was right;
+the math was wrong — the worst failure mode, because a reviewer concludes the
+physics is unsound when it is not.
 
 The service now delegates to `pvlib` rather than re-deriving astronomy, and
 `scripts/verify_docs.py` fails CI if the wrong expression reappears.
+→ `services/solar_service.py`.
+
+### 3. I "corrected" a correct constant, and it took external verification to catch
+
+This one is worth keeping.
+
+The spec's allometric code used a prefactor of `0.0673`. Reading the equation
+rather than trusting it, I concluded this was wrong and replaced it with
+`math.exp(-0.533) ≈ 0.5868`, documenting an "8.72× carbon understatement" across
+the suite. It sounded right. It was wrong.
+
+**Chave et al. (2014) Eq. 4 is `AGB = 0.0673 × (WD·H·D²)^0.976`.** The original
+constant was correct. This is confirmed verbatim in the R `BIOMASS` package
+(`computeAGB`, Réjou-Méchain, Tanguy & Perre, CRAN), whose documentation reads:
+
+> If tree height data are available, the AGB is computed thanks to the following
+> equation (Eq. 4 in Chave et al., 2014): `AGB = 0.0673 * (WD * H * D^2)^0.976`
+
+The `exp(-0.533)` value produced ~6.7× the stem's own wood volume at every DBH
+from 4 cm to 40 cm — a constant, systematic factor that should have read as
+"coefficient is wrong" rather than "the regression behaves like that".
+
+**What changed as a result:** the prefactor is reverted to the verified
+constant, the detour is documented rather than deleted, and
+`test_result_is_plausible_against_stem_geometry` now pins AGB to within a factor
+of a few of `π/4·D²·H·ρ` — the check that would have caught this in seconds
+instead of hours. `verify_docs.py` now *guards* `0.0673` and flags `0.5868`.
+
+The failure mode was the seductive one: a plausible intercept, converted to a
+prefactor, attached to a real paper, and wrong — in a project whose entire
+premise is replacing assertion with mathematics. Writing the check down is the
+point.
 
 ---
 

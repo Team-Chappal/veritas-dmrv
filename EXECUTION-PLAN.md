@@ -102,7 +102,7 @@ npm --prefix frontend run build     # exits 0
 
 **Goal:** every quantitative claim the platform makes is provably correct, and the two CRITICAL defects from the brief are fixed **before** any consumer is written.
 
-> **This stage is the highest-risk work in the project and must not be parallelized away or deferred.** The allometric constant under-reports carbon by 8.72×, and all four Tier-1 solar fixtures are outside their own tolerances. Building on top of those numbers compounds the error.
+> **This stage is the highest-risk work in the project and must not be parallelized away or deferred.** The allometric constant under-reports carbon by §WITHDRAWN§2×, and all four Tier-1 solar fixtures are outside their own tolerances. Building on top of those numbers compounds the error.
 
 | # | Task | Deliverable |
 | :-- | :--- | :--- |
@@ -110,7 +110,7 @@ npm --prefix frontend run build     # exits 0
 | 1.2 | Shadow-coherence verdict; **raise the low-sun gate** from `elev < 0` to `elev < 10°` and route below it to `REVIEW_AMBIGUOUS`, never hard-quarantine | in 1.1 |
 | 1.3 | **Regenerate every fixture from `pvlib` output** — no hand-written azimuths. Store the generating call in a comment | `tests/fixtures/solar_vectors.json` |
 | 1.4 | Correct the **NOAA derivation** in `03` §1.2 to match the code; delete the no-op ternary at `03` line 74 | doc patch |
-| 1.5 | Fix the **allometric constant** `0.0673` → `exp(-0.533) ≈ 0.5868`; add a test asserting agreement with Chave within 1% | `services/biomass_service.py` |
+| 1.5 | Fix the **allometric constant** `0.0673` → `§WITHDRAWN§ ≈ 0.5868`; add a test asserting agreement with Chave within 1% | `services/biomass_service.py` |
 | 1.6 | VM0047 §8.4 sampling-error discount | in 1.5 |
 | 1.7 | Forgery detection: Laplacian variance + 2D FFT peak ratio + Sobel Moiré ratio | `services/forgery_service.py` |
 | 1.8 | pHash + Hamming-distance corpus dedup | `services/dedup_service.py` |
@@ -120,9 +120,9 @@ npm --prefix frontend run build     # exits 0
 ```bash
 make test TIER=1
 # 1. All solar vectors generated from pvlib; every one within its own tolerance.
-# 2. Chave test: |code − exp(-0.533)·(ρD²H)^0.976| / reference < 0.01
+# 2. Chave test: |code − §WITHDRAWN§·(ρD²H)^0.976| / reference < 0.01
 # 3. Fraud fixture (Tsavo 11:30 UTC) still yields Δθ > 150° -> QUARANTINE
-# 4. Genuine fixture yields Δθ well under 12° with ≥ 5° margin  (currently 1.1° — must widen)
+# 4. Genuine fixture yields Δθ well under 12° with ≥ 5° margin  (was 2.56° — must widen)
 # 5. Low-sun (elev < 10°) returns REVIEW_AMBIGUOUS, never QUARANTINE
 # 6. Mock server serves the 05-API-SPEC VERIFIED_PASS payload as VERIFIED_PASS
 ```
@@ -307,7 +307,7 @@ S0 repo ─► S1 numerics ─┬─► S2 CV ───────────�
 | :--- | :--- |
 | 1. SAM instance segmentation (M4) | Zero rubric points. |
 | 2. EUDR Article 9 validator (M7) | Zero rubric points. High implementation cost (pyproj edge cases). |
-| 3. VM0047 discount + Chave biomass (M5/M5b) | Zero rubric points. *But keep the coefficient fix if the module stays* — a wrong constant shipped is worse than the module absent. |
+| 3. VM0047 discount + Chave biomass (M5/M5b) | Zero rubric points. *If the module stays, keep the plausibility-envelope test* — see §9.1 of the consolidated brief for why an unverified constant is a liability. |
 | 4. Gyroscopic horizon leveler | Nice demo, no rubric point. |
 | 5. Docker Compose | Only if CI alone is green. |
 | 6. Cloudinary Vector Search add-on (3.3) | Fall back to the local semantic path (3.4), which is already built and credential-free. |

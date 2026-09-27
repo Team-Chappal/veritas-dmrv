@@ -328,14 +328,28 @@ async def align_and_diff(
 @app.get("/api/v1/audit/dossier/{project_id}")
 def audit_dossier(project_id: str) -> dict:
     """Statutory EUDR / CSRD ESRS E4 dossier."""
-    from services.biomass_service import apply_vm0047_uncertainty_discount, calculate_allometric_carbon
+    from services.biomass_service import (
+        apply_vm0047_uncertainty_discount,
+        calculate_allometric_carbon,
+    )
+
+    # Per-stem geometry, scaled to a per-hectare figure. The stem density is an
+    # explicit input because a per-hectare number is only meaningful alongside
+    # its sampling design.
+    stems_per_hectare = 1100
+    stand_area_ha = 1.0
 
     biomass = calculate_allometric_carbon(
-        canopy_area_m2=11.29,  # DBH 6.8 cm via the crown-projection proxy
+        canopy_area_m2=11.29,  # ~6.8 m crown, consistent with DBH 6.8 cm
         mean_height_m=3.9,
         wood_density_g_cm3=0.45,
         species_name="Rhizophora mucronata",
         measured_dbh_cm=6.8,
+        stand_area_ha=stand_area_ha,
+        stems_per_hectare=stems_per_hectare,
+    )
+    discount = apply_vm0047_uncertainty_discount(
+        gross_tco2e=biomass.co2e_metric_tons, sampling_error_pct=8.7
     )
     discount = apply_vm0047_uncertainty_discount(
         gross_tco2e=biomass.co2e_metric_tons, sampling_error_pct=8.7
@@ -367,7 +381,12 @@ def audit_dossier(project_id: str) -> dict:
             "mean_dbh_cm": biomass.estimated_dbh_cm,
             "mean_height_m": biomass.mean_height_m,
             "equation": biomass.equation,
-            "estimated_tco2e_per_hectare": biomass.co2e_metric_tons,
+            "sampling_design": {
+                "stand_area_ha": stand_area_ha,
+                "stems_per_hectare": stems_per_hectare,
+            },
+            "gross_tco2e_per_hectare": biomass.co2e_metric_tons,
+            "estimated_tco2e_per_hectare": discount.net_certified_tco2e,
             "vm0047_uncertainty": discount.to_dict(),
         },
         "c2pa_root_manifest_hash": (

@@ -6,30 +6,38 @@ Converts a measured canopy surface-area delta into certified tonnes of CO2
 equivalent, then applies the mandatory Verra VM0047 sampling-uncertainty
 discount.
 
-CRITICAL CORRECTION vs docs/03-SYSTEM-DESIGN.md §5
----------------------------------------------------
-The original implementation was:
+COEFFICIENT PROVENANCE — a correction that turned out to be unnecessary
+---------------------------------------------------------------------
+An earlier revision of this module replaced a prefactor of ``0.0673`` with
+``math.exp(-0.533) ~= 0.5868``, on the belief that the documented constant was
+wrong by a factor of 8.72. **That belief was incorrect and has been reverted.**
 
-    agb_kg = 0.0673 * ((wood_density_g_cm3 * (DBH_cm ** 2) * height_m) ** 0.976)
+Chave et al. (2014) Eq. 4 is:
 
-and was described in the document as "peer-reviewed Chave et al. pantropical
-ARR allometric equations." It is not. The Chave et al. (2014) pantropical
-regression is
+    AGB = 0.0673 * (WD * H * D^2) ** 0.976
 
-    ln(AGB) = b0 + b1 * ln(rho * DBH^2 * H),   b0 = -0.533,  b1 = 0.976
+This is confirmed by the reference implementation in the R ``BIOMASS`` package
+(Rejou-Mechain, Tanguy & Perre, CRAN), which documents verbatim: "If tree height
+data are available, the AGB is computed thanks to the following equation
+(Eq. 4 in Chave et al., 2014): ``AGB = 0.0673 * (WD * H * D^2)^0.976``", and by
+the abstract's own scope: the model is fitted to 4,004 directly harvested trees
+>= 5 cm trunk diameter.
 
-so the correct prefactor is exp(-0.533) ~= 0.5868, NOT 0.0673.
+The original ``docs/03-SYSTEM-DESIGN.md`` constant was therefore correct, and the
+apparent 6.7x discrepancy against a perfect-cylinder stem volume was the
+regression behaving normally, not an error:
 
-The documented constant under-reports above-ground biomass — and therefore
-carbon — by a factor of 8.72. For a 100 m^2 canopy at 4 m height and rho
-0.58 g/cm^3: the original code returns 0.1005 tCO2e, the correct Chave
-equation returns 0.8762 tCO2e.
+    DBH 6.8 cm, H 3.9 m, rho 0.45 g/cm^3
+      Chave et al. (2014)  ->  4.91 kg AGB
+      perfect cylinder     ->  6.42 kg AGB   (within 24%)
 
-This matters commercially, not just academically: docs/05-API-SPEC.md §1.4
-advertises "+6.84 tCO2e/ha" in the audit dossier. Had that figure been derived
-from the broken constant, the platform would have been systematically
-under-crediting every project it certifies — a defect that would surface as a
-real dispute with a Verra validator.
+The record of the reverted change is retained here deliberately. A codebase whose
+premise is "we replace assertion with mathematics" has no business shipping a
+coefficient that nobody checked, and the failure mode that nearly shipped was the
+most seductive one available: a plausible-looking intercept, converted to a
+prefactor, cited to a real paper, and wrong. The lesson is carried forward in
+``scripts/verify_docs.py``, which lints documentation claims for exactly this
+shape of defect.
 
 REMAINING CAVEAT (stated plainly rather than hidden)
 ---------------------------------------------------
@@ -55,15 +63,13 @@ import pandas as pd
 # Chave et al. (2014) pantropical coefficients
 # --------------------------------------------------------------------------- #
 
-#: Intercept of the Chave et al. (2014) pantropical AGB regression.
-CHAVE_B0 = -0.533
+#: Chave et al. (2014) Eq. 4, the pantropical height-based AGB model:
+#:     AGB = 0.0673 * (WD * H * D^2) ** 0.976
+#: Verified against the R BIOMASS package reference implementation.
+CHAVE_PREFACTOR = 0.0673
 
-#: Slope of the same regression.
+#: Exponent of the same regression.
 CHAVE_B1 = 0.976
-
-#: exp(CHAVE_B0) ~= 0.5868. THE CORRECT PREFACTOR. The 0.0673 printed in the
-#: original design document is wrong by a factor of 8.72.
-CHAVE_PREFACTOR = math.exp(CHAVE_B0)
 
 #: Carbon mass fraction of dry woody biomass (IPCC default for tropical
 #: woody biomass; the plausible range is 0.45-0.50).
@@ -99,7 +105,7 @@ class BiomassEstimate:
     agb_kg: float
     carbon_kg: float
     co2e_metric_tons: float
-    equation: str = "Chave et al. (2014) pantropical AGB: ln(AGB) = -0.533 + 0.976*ln(rho*DBH^2*H)"
+    equation: str = "Chave et al. (2014) Eq.4 pantropical: AGB = 0.0673*(WD*H*D^2)^0.976"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -176,7 +182,7 @@ def calculate_allometric_carbon(
         dbh_cm = estimate_dbh_from_canopy(canopy_area_m2, wood_density_g_cm3)
         dbh_source = "crown_projection_proxy_2.1*sqrt(area_m2)"
 
-    # Chave et al. (2014): AGB[kg] = exp(b0) * (rho[g/cm^3] * DBH[cm]^2 * H[m])^b1
+    # Chave et al. (2014) Eq. 4: AGB[kg] = 0.0673 * (WD*H*D^2)^0.976
     db_term = wood_density_g_cm3 * (dbh_cm**2) * mean_height_m
     agb_kg = CHAVE_PREFACTOR * (db_term**CHAVE_B1)
 

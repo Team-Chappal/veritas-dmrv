@@ -48,10 +48,10 @@ import pytest
 # The four vectors originally listed in this file were all outside their own
 # stated tolerances, and one was physically impossible:
 #
-#   Nairobi 2026-09-22T08:15:30Z   documented  94.2   actual  83.6   (10.6 deg off)
-#   Nairobi 2026-09-22T13:30:00Z   documented 268.4   actual 271.4   ( 3.0 deg off)
-#   Ankara  2026-06-21T10:00:00Z   documented 138.5   actual 188.1   (49.6 deg off, IMPOSSIBLE)
-#   Berlin  2026-12-21T11:00:00Z   documented 173.1   actual 179.0   ( 5.9 deg off)
+#   Nairobi 2026-09-22T08:15:30Z   documented  94.2   actual  85.06  ( 9.14 deg off)
+#   Nairobi 2026-09-22T13:30:00Z   documented 268.4   actual 270.91  ( 2.51 deg off)
+#   Ankara  2026-06-21T10:00:00Z   documented 138.5   actual 187.74  (49.24 deg off, IMPOSSIBLE)
+#   Berlin  2026-12-21T11:00:00Z   documented 173.1   actual 178.95  ( 5.85 deg off)
 #
 # The Ankara case is diagnostic: at 10:00 UTC on the June solstice, solar noon
 # at 32.85E is 09:48 UTC, so the sun is 12 minutes PAST the meridian and its
@@ -186,7 +186,7 @@ def test_shadow_fraud_quarantine_rejection():
         latitude=-1.2921,
         longitude=36.8219,
         timestamp_utc=datetime(2026, 9, 22, 8, 15, 30, tzinfo=timezone.utc),
-        observed_shadow_azimuth_deg=83.6,   # shadow pointing EAST — impossible
+        observed_shadow_azimuth_deg=85.06,  # shadow pointing EAST — impossible
     )
 
     assert result.verdict == ShadowVerdict.QUARANTINE_SOLAR_MISMATCH

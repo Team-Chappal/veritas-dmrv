@@ -447,23 +447,48 @@ This is the core of the brief. Each question from §1.4 is mapped to the specifi
 
 These are findings from reading all 15 documents and independently recomputing their numeric claims. Ordered by severity.
 
-### 9.1 CRITICAL — The allometric biomass equation is wrong by ~8.7×
+### 9.1 WITHDRAWN — "The allometric biomass equation is wrong by 8.72×"
 
-`03-SYSTEM-DESIGN` §5 line 374:
+**This finding was reported in the first pass of this brief and it was wrong.
+It is retained here as a record rather than deleted.**
 
-```python
-agb_kg = 0.0673 * ((wood_density_g_cm3 * (estimated_dbh_cm ** 2) * mean_height_m) ** 0.976)
-```
+The original claim: `03-SYSTEM-DESIGN.md` §5 used a prefactor of `0.0673` and
+described it as implementing Chave et al. pantropical allometry; I asserted the
+correct prefactor was `exp(-0.533) ≈ 0.5868`, that the documented constant
+under-reported carbon by 8.72×, and that `05-API-SPEC`'s advertised `+6.84
+tCO₂e/ha` was therefore invalid.
 
-The Chave et al. (2014) pantropical regression is
-$$\ln(\text{AGB}) = \beta_0 + \beta_1 \ln(\rho D^2 H), \quad \beta_0 = -0.533,\ \beta_1 = 0.976$$
-so the correct prefactor is $e^{-0.533} \approx \mathbf{0.5868}$, **not 0.0673**.
+**The correction was itself the error.** Chave et al. (2014) Eq. 4 is:
 
-**Impact:** the code under-reports carbon by **8.72×**. Worked example (100 m² canopy, 4 m height, ρ 0.58): doc yields **0.1005 tCO₂e**, Chave yields **0.8762 tCO₂e**. The document explicitly claims these are "peer-reviewed Chave et al. pantropical ARR allometric equations," and `05-API-SPEC` §1.4 advertises "+6.84 tCO₂e/ha." Any judge who knows forestry — or who simply types the Chave coefficients into a calculator — will catch this, and it invalidates the headline carbon numbers in the dossier.
+$$AGB = 0.0673 	imes (WD 	imes H 	imes D^2)^{0.976}$$
 
-**Fix:** change `0.0673` → `math.exp(-0.533)` (≈ 0.5868), or better, call `pip install allometric` / use a published equation and cite the exact source and species group in the dossier.
+confirmed verbatim in the R `BIOMASS` package (`computeAGB`, Réjou-Méchain,
+Tanguy & Perre), whose documentation cites it as "Eq. 4 in Chave et al., 2014".
+The Chave 2014 model is fitted to 4,004 directly harvested trees ≥ 5 cm DBH
+across 58 sites, so 6.8 cm mangroves are *inside* its calibration domain. The
+spec's constant was correct all along.
 
----
+The tell was available at the time and was not read: the "wrong" coefficient
+produced ~6.7× the stem's own wood volume (`π/4·D²·H·ρ`) at **every** DBH from
+4 cm to 40 cm. A constant multiplicative offset across the whole range is the
+signature of a wrong coefficient, not of a regression whose residuals vary with
+tree size. A plausibility envelope would have falsified the "correction"
+immediately.
+
+With the verified constant, DBH 6.8 cm / H 3.9 m / ρ 0.45 g/cm³ yields
+AGB ≈ 4.91 kg against 6.42 kg for the cylinder model — 24% agreement, exactly
+what a good harvest-fitted regression should produce.
+
+**What changed:** `services/biomass_service.py` uses the verified `0.0673`;
+`test_result_is_plausible_against_stem_geometry` pins AGB to within a factor of
+a few of stem geometry; `scripts/verify_docs.py` now guards `0.0673` and flags
+`0.5868`.
+
+**The lesson is the transferable part.** In a project whose premise is
+"replace assertion with mathematics," the most dangerous defect is a *correct-
+looking* number attached to a real citation. Any coefficient in this codebase
+must be pinned by an independent check — a second implementation, a published
+reference, or a physical envelope — not by inspection.
 
 ### 9.2 CRITICAL — Two of the four Tier-1 solar test vectors are numerically wrong and will fail CI
 
@@ -471,14 +496,14 @@ so the correct prefactor is $e^{-0.533} \approx \mathbf{0.5868}$, **not 0.0673**
 
 | Vector | Doc expected az | True az (NOAA) | Error | Tolerance | Result |
 | :--- | :--: | :--: | :--: | :--: | :--- |
-| Nairobi 2026-09-22T08:15:30Z | 94.2 | **83.6** | 10.6° | ±2.0° | **FAIL** |
-| Nairobi 2026-09-22T13:30:00Z | 268.4 | **271.4** | 3.0° | ±2.0° | **FAIL** |
-| Ankara 2026-06-21T10:00:00Z | 138.5 | **188.1** | **49.6°** | ±2.5° | **FAIL** |
-| Berlin 2026-12-21T11:00:00Z | 173.1 | **179.0** | 5.9° | ±2.5° | **FAIL** |
+| Nairobi 2026-09-22T08:15:30Z | 94.2 | **85.06** | §WITHDRAWN§4° | ±2.0° | **FAIL** |
+| Nairobi 2026-09-22T13:30:00Z | 268.4 | **270.91** | 2.51° | ±2.0° | **FAIL** |
+| Ankara 2026-06-21T10:00:00Z | 138.5 | **187.74** | **49.24°** | ±2.5° | **FAIL** |
+| Berlin 2026-12-21T11:00:00Z | 173.1 | **178.95** | 5.85° | ±2.5° | **FAIL** |
 
 **All four vectors are outside their stated tolerances.** The Ankara case is the worst: at 10:00 UTC on the June solstice, solar noon at 32.85°E is 09:48 UTC, so the sun is 12 minutes past the meridian and the azimuth must be ≈188° (due south). A claimed 138.5° is physically impossible.
 
-**Knock-on risk — the live demo.** The Nairobi morning vector is the *headline* pitch number ("claimed 2 PM, shadow proves 8:15 AM," sun azimuth 94.2). True azimuth is 83.6, so the expected shadow is 263.6° not 274.2°. The fixture's observed shadow of 274.5° therefore lands **10.9° of error against a 12.0° threshold — a 1.1° margin.** That "legitimate photo" passes by luck. Any small refactor, timezone slip, or pvlib-vs-hand-rolled divergence flips a *genuine* photo to `QUARANTINE_SOLAR_MISMATCH` on stage, in front of judges, in the one demo that must not fail.
+**Knock-on risk — the live demo.** The Nairobi morning vector is the *headline* pitch number ("claimed 2 PM, shadow proves 8:15 AM," sun azimuth 94.2). pvlib ground truth is 85.06°, so the expected shadow is 265.06° not 274.2°. The fixture's observed shadow of 274.5° therefore lands **9.44° of error against a 12.0° threshold — a 2.6° margin.** That "legitimate photo" passes by luck. Any small refactor, timezone slip, or pvlib-vs-hand-rolled divergence flips a *genuine* photo to `QUARANTINE_SOLAR_MISMATCH` on stage, in front of judges, in the one demo that must not fail.
 
 **Fix:** regenerate every vector by calling `pvlib.solarposition.get_solarposition` and pasting the actual output, rather than hand-writing plausible-looking azimuths. The fraud fixture (`09` §2, Tsavo 11:30 UTC) *does* correctly produce a ~179° divergence, so the fraud narrative is sound — only the "pass" fixtures are miscalibrated.
 
@@ -582,7 +607,7 @@ The > 4 ha point-vs-polygon provision is genuine EUDR implementation practice. T
 
 ---
 
-### 9.10 LOW — Dead mock-server logic branch
+### §WITHDRAWN§0 LOW — Dead mock-server logic branch
 
 `11` §3 `mock_triage` treats `observed_shadow_azimuth_deg > 200` as a fraud signal. But `05-API-SPEC`'s own **VERIFIED_PASS** example uses an observed shadow of 274.5 — which trips the fraud branch. A frontend developer testing against the mock will get a quarantine response for the documented success payload.
 
@@ -620,7 +645,7 @@ The > 4 ha point-vs-polygon provision is genuine EUDR implementation practice. T
 
 **Where it is weak is verification.** The suite's central claim is that it replaces assertion with mathematics, and then its own mathematics does not check out:
 
-- the allometric constant under-reports carbon by 8.7× (§9.1),
+- ~~the allometric constant under-reports carbon by 8.7×~~ — **withdrawn, see §9.1; the spec's constant was correct**,
 - all four Tier-1 solar test vectors are outside their own tolerances, with one impossible by 50° (§9.2),
 - the flagship "legitimate photo" fixture clears the fraud threshold by only 1.1° (§9.2),
 - the written solar derivation contradicts the code that implements it (§9.5).
@@ -628,10 +653,10 @@ The > 4 ha point-vs-polygon provision is genuine EUDR implementation practice. T
 **And the plan does not match the spec.** Roughly half the specified system — including the modules that answer Judge Questions Q2, Q5, and Q8 — is absent from the WBS, while the plan consumes only 45 of 144 available person-hours (§9.3).
 
 **Recommended order of work:**
-1. Fix the allometric coefficient and regenerate every solar fixture from `pvlib` output (§9.1, §9.2). *This is existential for the demo.*
+1. Fix the allometric coefficient and regenerate every solar fixture from `pvlib` output (§§WITHDRAWN§, §9.2). *This is existential for the demo.*
 2. Rebuild the WBS as three parallel 14-hour tracks seeded by the mock server (§9.3).
 3. Correct the solar derivation in §1.2 and delete the dead ternary (§9.5).
 4. Standardise on GLI + Otsu; reconcile PRD FR-2.4, `05`, and the mock (§9.4).
-5. Soften the EUDR 6-decimal overclaim; fix the icon contradiction; reset the DoD checkboxes; fix the mock's fraud branch (§9.7–9.10).
+5. Soften the EUDR 6-decimal overclaim; fix the icon contradiction; reset the DoD checkboxes; fix the mock's fraud branch (§9.7–§WITHDRAWN§0).
 
 The problem framing, the architecture, and the defense playbook are strong enough to win. The risk is entirely in the last mile of numerical rigor — and that is exactly the risk a product whose entire premise is "we replace trust with math" cannot afford to take.

@@ -1,0 +1,17 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["backend/tests"]
+# `backend`         -> so tests can `from services.solar_service import ...`
+# `backend/tests`   -> so tests can `from conftest import as_utc` and use the
+#                      shared synthetic-image generators
+pythonpath = ["backend", "backend/tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+  "error::DeprecationWarning:services.*",
+]
+markers = [
+  "tier1: physics and forensics (no OpenCV required)",
+  "tier2: computer vision and photogrammetry (requires OpenCV)",
+  "tier3: integration and webhooks",
+  "tier4: end-to-end browser flows",
+]

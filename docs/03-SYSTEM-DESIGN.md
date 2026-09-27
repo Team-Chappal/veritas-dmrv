@@ -371,32 +371,39 @@ class SamCanopySegmentor:
 
 ## 5. Algorithmic Module 5: Above-Ground Biomass Allometric Science
 
-> **CORRECTION (v1.2.0) — the constant was wrong by 8.72×.**
->
-> The original implementation used a prefactor of `0.0673` and was described as
-> implementing "peer-reviewed Chave et al. pantropical ARR allometric
-> equations." It did not. The Chave et al. (2014) pantropical regression is
->
-> $$\ln(\text{AGB}) = \beta_0 + \beta_1 \ln(\rho D^2 H), \quad \beta_0 = -0.533,\ \beta_1 = 0.976$$
->
-> so the correct prefactor is $e^{-0.533} \approx \mathbf{0.5868}$, not
-> $0.0673$. The documented value under-reports above-ground biomass — and
-> therefore carbon — by a factor of **8.72**.
->
-> Worked example (100 m² canopy, 4 m height, ρ = 0.58 g/cm³):
-> original code returns **0.1005 tCO₂e**; Chave et al. returns **0.8762 tCO₂e**.
->
-> This is a commercial defect, not an academic one. `05-API-SPEC.md` §1.4
-> advertises `+6.84 tCO₂e/ha` in the audit dossier. Had that figure been derived
-> from the broken constant, the platform would have systematically
-> under-credited every project it certifies — a dispute waiting to happen with a
-> Verra validator.
->
-> **Authoritative implementation:** `backend/services/biomass_service.py`
-> (`CHAVE_PREFACTOR = math.exp(-0.533)`, regression-tested against the published
-> equation in `tests/test_physics.py::TestAllometricCarbon`).
+### 5.0 Coefficient Provenance
 
-### 5.0 Remaining Caveat — Stated, Not Hidden
+The equation used is **Chave et al. (2014) Eq. 4**, the pantropical height-based
+AGB model:
+
+$$AGB = 0.0673 \times (WD \times H \times D^2)^{0.976}$$
+
+with $WD$ in g/cm³, $D$ = DBH at 1.3 m in cm, $H$ = total height in m, and AGB
+in kg. The model is fitted to 4,004 directly harvested trees $\ge 5$ cm trunk
+diameter across 58 sites.
+
+> **Audit note (v1.2.0).** A revision of this document briefly "corrected" the
+> `0.0673` prefactor to $\exp(-0.533) \approx 0.5868$, claiming an 8.72×
+> overstatement. **That correction was itself wrong and has been reverted.** The
+> published Chave et al. (2014) prefactor *is* 0.0673, as documented verbatim in
+> the R `BIOMASS` package (`computeAGB`, Réjou-Méchain, Tanguy & Perre) and
+> CRAN. The detour is recorded rather than deleted because it is the exact
+> failure mode this project exists to prevent: a plausible-looking intercept
+> converted to a prefactor, attached to a real citation, and wrong. The
+> regression test `test_result_is_plausible_against_stem_geometry` now pins AGB
+> to within a factor of a few of the stem's own wood volume, which is what would
+> have caught it immediately.
+
+### 5.1 Sanity Envelope
+
+At DBH 6.8 cm, $H$ = 3.9 m, $WD$ = 0.45 g/cm³, Chave et al. gives
+**AGB ≈ 4.91 kg**, against 6.42 kg for a perfect-cylinder model
+$\frac{\pi}{4}D^2H\rho$ — agreement within 24%, which is the expected
+behaviour for a regression over directly harvested stems. An allometric result
+falling an order of magnitude away from the stem's own wood volume indicates a
+wrong coefficient and must be rejected.
+
+### 5.2 Remaining Caveat — Stated, Not Hidden
 
 The relation `DBH = 2.1 · √(canopy_area_m²)` is a **crude crown-projection
 proxy**, not a dendrometer measurement at 1.3 m breast height. It is adequate
@@ -409,17 +416,16 @@ When supplied, the proxy is bypassed entirely. Every emitted record carries a
 `crown_projection_proxy_2.1*sqrt(area_m2)`) so the audit dossier can never
 present a crown-area estimate as a survey measurement.
 
-### 5.1 Equation Chain
+### 5.3 Equation Chain
+
+**Authoritative implementation:** `backend/services/biomass_service.py`
 
 ```python
 import math
 
-# Chave et al. (2014) pantropical coefficients. b0 = -0.533 is the
-# CORRECT intercept; the previously documented 0.0673 prefactor was
-# mathematically unrelated to this regression.
-CHAVE_B0 = -0.533
+# Chave et al. (2014) Eq. 4 — pantropical height-based AGB model.
+CHAVE_PREFACTOR = 0.0673
 CHAVE_B1 = 0.976
-CHAVE_PREFACTOR = math.exp(CHAVE_B0)          # ~= 0.5868
 
 CARBON_FRACTION = 0.47                        # IPCC tropical woody biomass
 CO2_PER_CARBON = 44.0 / 12.0                  # = 3.667
@@ -428,7 +434,7 @@ CO2_PER_CARBON = 44.0 / 12.0                  # = 3.667
 def calculate_allometric_carbon(
     canopy_area_m2: float,
     mean_height_m: float,
-    wood_density_g_cm3: float = 0.58,          # Default pantropical Acacia
+    wood_density_g_cm3: float = 0.58,
     species_name: str = "Acacia tortilis",
     measured_dbh_cm: float | None = None,
     stand_area_ha: float | None = None,
@@ -442,7 +448,6 @@ def calculate_allometric_carbon(
         dbh_cm = 2.1 * math.sqrt(max(canopy_area_m2, 0.0))
         dbh_source = "crown_projection_proxy_2.1*sqrt(area_m2)"
 
-    # AGB[kg] = exp(b0) * (rho[g/cm^3] * DBH[cm]^2 * H[m])^b1
     agb_kg = CHAVE_PREFACTOR * ((wood_density_g_cm3 * dbh_cm**2 * mean_height_m) ** CHAVE_B1)
     carbon_kg = agb_kg * CARBON_FRACTION
     co2e_metric_tons = carbon_kg * CO2_PER_CARBON / 1000.0
@@ -452,18 +457,15 @@ def calculate_allometric_carbon(
 
     return {
         "species": species_name,
-        "wood_density": wood_density_g_cm3,
         "dbh_source": dbh_source,
         "estimated_dbh_cm": round(dbh_cm, 2),
-        "mean_height_m": round(mean_height_m, 2),
         "agb_kg": round(agb_kg, 2),
-        "carbon_kg": round(carbon_kg, 2),
         "co2e_metric_tons": round(co2e_metric_tons, 4),
-        "equation": "Chave et al. (2014) pantropical AGB: ln(AGB) = -0.533 + 0.976*ln(rho*DBH^2*H)",
+        "equation": "Chave et al. (2014) Eq.4 pantropical: AGB = 0.0673*(WD*H*D^2)^0.976",
     }
 ```
 
-### 5.2 Verra VM0047 Statistical Uncertainty Deduction
+### 5.4 Verra VM0047 Statistical Uncertainty Deduction
 Under Verra ARR Methodology VM0047 Section 8.4, carbon estimates must calculate sampling error at the 90% confidence interval. If sampling error exceeds 15%, a mandatory discount is penalized directly:
 
 $$E_{\text{sampling}} = \left(\frac{t_{0.90, n-1} \cdot s}{\sqrt{n} \cdot \bar{x}}\right) \times 100\%$$

@@ -64,6 +64,110 @@ FIXTURE_PATH = REPO / "backend" / "tests" / "fixtures" / "solar_vectors.json"
 GENUINE_JITTER_DEG = 2.0
 
 
+# --------------------------------------------------------------------------- #
+# Probes — find a moment with the required solar geometry
+# --------------------------------------------------------------------------- #
+#
+# Timestamps used to be hardcoded here, and three of them turned out to put the
+# sun in the wrong part of the sky for the scenario they were named after. The
+# examples that failed:
+#
+#   * Berlin, winter solstice, 13:00 UTC. Berlin's MAXIMUM solar elevation on
+#     21 December is only ~14 deg (90 - |52.52 - (-23.44)|), and 13:00 UTC is
+#     1.9 h past the 11:06 UTC solar noon, so the sun had already dropped below
+#     the 10 deg abstention gate. A "genuine" case was silently testing the
+#     abstention path.
+#   * Nairobi, "dawn", 05:35 UTC. On the September equinox at the equator, dawn
+#     is ~03:00 UTC, so 05:35 UTC puts the sun ~30 deg up — nowhere near the
+#     low-sun band the scenario was meant to exercise.
+#   * Pretoria, 18:00 UTC. That is the middle of the night, so the case returned
+#     QUARANTINE_NIGHTTIME rather than the intended solar-mismatch verdict.
+#
+# Rather than hand-pick better numbers (and get it wrong again), each scenario
+# now SEARCHES for the moment that satisfies its own premise.
+
+
+def _scan_day(latitude: float, longitude: float, day: str, step_minutes: int = 5) -> list:
+    """Return [(timestamp_utc, elevation_deg, azimuth_deg)] across one UTC day."""
+    start = dt.datetime.fromisoformat(f"{day}T00:00:00+00:00")
+    out = []
+    for i in range(0, 24 * 60, step_minutes):
+        ts = start + dt.timedelta(minutes=i)
+        pos = calculate_solar_position(latitude, longitude, ts)
+        out.append((ts, pos["elevation_deg"], pos["azimuth_deg"]))
+    return out
+
+
+def _find_time_at_elevation(
+    latitude: float,
+    longitude: float,
+    day: str,
+    target_deg: float = 5.0,
+    prefer: str = "rising",
+) -> dt.datetime:
+    """Find the moment on ``day`` when the sun is closest to ``target_deg``.
+
+    ``prefer`` selects the rising (morning) or setting (evening) crossing, so a
+    scenario can specify dawn rather than dusk.
+    """
+    scan = _scan_day(latitude, longitude, day)
+    above = [(ts, el) for ts, el, _ in scan if el >= target_deg]
+    if not above:
+        raise ValueError(f"sun never reaches {target_deg} deg at ({latitude},{longitude}) on {day}")
+
+    best = min(above, key=lambda item: abs(item[1] - target_deg))
+
+    if prefer == "setting":
+        # Take the LAST approach to the target instead of the first.
+        late = [item for item in above if item[0] > dt.datetime.fromisoformat(f"{day}T12:00:00+00:00")]
+        if late:
+            best = min(late, key=lambda item: abs(item[1] - target_deg))
+
+    return best[0]
+
+
+def _find_max_location_divergence(
+    true_lat: float,
+    true_lon: float,
+    claimed_lat: float,
+    claimed_lon: float,
+    day: str,
+    min_elevation_deg: float = 10.0,
+) -> dt.datetime:
+    """Find the moment when two locations' expected shadow azimuths diverge most.
+
+    A falsified-location case is only a convincing demonstration if the sun's
+    geometry genuinely differs between the claimed and the true site at the
+    claimed instant. Picking 08:15 UTC arbitrarily gave only ~63 deg, because at
+    that moment both sites have the sun in a similar part of the sky. Scanning
+    the day for the worst case is both more honest and more dramatic.
+    """
+    scan = _scan_day(true_lat, true_lon, day)
+    best_ts, best_div = None, -1.0
+    for ts, el_true, az_true in scan:
+        if el_true < min_elevation_deg:
+            continue
+        claimed = calculate_solar_position(claimed_lat, claimed_lon, ts)
+        if claimed["elevation_deg"] < min_elevation_deg:
+            continue
+        div = abs(
+            (expected_shadow_azimuth(az_true) - expected_shadow_azimuth(claimed["azimuth_deg"]))
+            % 360.0
+        )
+        div = min(div, 360.0 - div)
+        if div > best_div:
+            best_ts, best_div = ts, div
+    if best_ts is None:
+        raise ValueError("no moment with both sites above the elevation floor")
+    return best_ts
+
+
+def _find_solar_noon(latitude: float, longitude: float, day: str) -> dt.datetime:
+    """Find the moment of maximum solar elevation on ``day``."""
+    scan = _scan_day(latitude, longitude, day)
+    return max(scan, key=lambda item: item[1])[0]
+
+
 def _genuine(
     scenario_id: str,
     narrative: str,
@@ -185,6 +289,105 @@ def _abstain(
     }
 
 
+def _genuine_at_solar_noon(
+    scenario_id: str,
+    narrative: str,
+    latitude: float,
+    longitude: float,
+    day: str,
+    jitter_deg: float = 1.0,
+) -> dict:
+    """A coherent capture taken at the moment of maximum solar elevation.
+
+    Required for high-latitude winter cases, where the sun barely clears the
+    horizon and a hand-picked hour falls into the abstention band.
+    """
+    ts = _find_solar_noon(latitude, longitude, day)
+    return _genuine(
+        scenario_id,
+        narrative,
+        latitude,
+        longitude,
+        ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        jitter_deg=jitter_deg,
+    )
+
+
+def _abstain_at_low_sun(
+    scenario_id: str,
+    narrative: str,
+    latitude: float,
+    longitude: float,
+    day: str,
+    expected_verdict: str,
+) -> dict:
+    """A capture at a PROBED low-sun moment, to exercise the abstention path."""
+    ts = _find_time_at_elevation(latitude, longitude, day, target_deg=5.0, prefer="rising")
+    return _abstain(
+        scenario_id,
+        narrative,
+        latitude,
+        longitude,
+        ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        expected_verdict=expected_verdict,
+    )
+
+
+def _fraud_location_swap(
+    scenario_id: str,
+    narrative: str,
+    true_lat: float,
+    true_lon: float,
+    true_iso: str,
+    claimed_lat: float,
+    claimed_lon: float,
+    claimed_iso: str,
+) -> dict:
+    """A genuine photo submitted with a falsified LOCATION.
+
+    A distinct attack from a falsified clock: the timestamp is honest and the
+    shadow is honest, only the coordinates were edited. The sun's path differs
+    by latitude, so the expected shadow azimuth disagrees with the observed one.
+    """
+    # Take the observation from the true capture instant, then CHOOSE the
+    # claimed instant that maximises the geometric divergence between the two
+    # sites. A hand-picked shared timestamp produced only ~63 deg.
+    true_ts = dt.datetime.fromisoformat(true_iso.replace("Z", "+00:00"))
+    true_pos = calculate_solar_position(true_lat, true_lon, true_ts)
+    observed = expected_shadow_azimuth(true_pos["azimuth_deg"]) % 360.0
+
+    day = true_iso[:10]
+    claimed_ts = _find_max_location_divergence(
+        true_lat, true_lon, claimed_lat, claimed_lon, day
+    )
+    claimed_iso = claimed_ts.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    claimed_pos = calculate_solar_position(claimed_lat, claimed_lon, claimed_ts)
+    claimed_expected = expected_shadow_azimuth(claimed_pos["azimuth_deg"])
+
+    result = verify_shadow_coherence(claimed_lat, claimed_lon, claimed_ts, observed)
+    return {
+        "scenario_id": scenario_id,
+        "kind": "fraud",
+        "narrative": narrative,
+        "latitude": claimed_lat,
+        "longitude": claimed_lon,
+        "timestamp_utc": claimed_iso,
+        "true_capture_timestamp_utc": true_iso,
+        "true_capture_latitude": true_lat,
+        "true_capture_longitude": true_lon,
+        "observed_shadow_azimuth_deg": round(observed, 2),
+        "pvlib_sun_azimuth_deg": round(claimed_pos["azimuth_deg"], 2),
+        "pvlib_sun_elevation_deg": round(claimed_pos["elevation_deg"], 2),
+        "expected_shadow_azimuth_deg": round(claimed_expected, 2),
+        "angular_error_deg": result.angular_error_deg,
+        "margin_to_tolerance_deg": result.margin_to_tolerance_deg,
+        "expected_verdict": "QUARANTINE_SOLAR_MISMATCH",
+        "fraud_min_error_deg": 45.0,
+        "ground_truth_source": "pvlib.solarposition.get_solarpattern",
+    }
+
+
 def build_fixtures() -> list:
     fixtures = [
         # ---------------- GENUINE: wide-margin demo captures ---------------- #
@@ -207,12 +410,15 @@ def build_fixtures() -> list:
             39.9207, 32.8541, "2026-06-21T09:48:00Z",
             jitter_deg=1.5,
         ),
-        _genuine(
+        _genuine_at_solar_noon(
             "GEN_04_BERLIN_WINTER_SOLSTICE",
-            "Replaces the documented Berlin vector (173.1 deg; true 179.0 deg). "
-            "Low winter sun; still above the 10 deg abstention gate.",
-            52.5200, 13.4050, "2026-12-21T13:00:00Z",
-            jitter_deg=2.5,
+            "Replaces the documented Berlin vector (173.1 deg). Berlin's MAXIMUM "
+            "solar elevation on 21 December is only ~14 deg, so this scenario has "
+            "to sit within ~1 h of solar noon to clear the 10 deg abstention gate. "
+            "A hand-picked 13:00 UTC put the sun below the gate and silently "
+            "tested the wrong code path.",
+            52.5200, 13.4050, "2026-12-21",
+            jitter_deg=1.5,
         ),
         _genuine(
             "GEN_05_TSAVO_PM",
@@ -238,20 +444,24 @@ def build_fixtures() -> list:
             true_capture_iso="2026-09-22T11:30:00Z",
             claimed_capture_iso="2026-09-22T05:15:00Z",
         ),
-        _fraud(
-            "FRAUD_03_WRONG_HEMISPHERE",
-            "A northern-hemisphere sun angle claimed for a southern-hemisphere "
-            "coordinate, a common hand-edit when reusing a stock photo.",
-            -25.7479, 28.2293,  # Pretoria
-            true_capture_iso="2026-09-22T08:00:00Z",
-            claimed_capture_iso="2026-09-22T18:00:00Z",
+        _fraud_location_swap(
+            "FRAUD_03_FALSIFIED_LOCATION",
+            "A photo genuinely taken at Kilifi, Kenya, but claimed to be a plot in "
+            "Ankara, Turkey. Solar geometry catches this because the sun's path "
+            "differs by latitude. Distinct attack from a falsified CLOCK, and the "
+            "one that a naive timestamp check would miss entirely.",
+            true_lat=-1.2921, true_lon=36.8219, true_iso="2026-09-22T08:15:30Z",
+            claimed_lat=39.9207, claimed_lon=32.8541, claimed_iso="2026-09-22T08:15:30Z",
         ),
         # ---------------- ABSTAIN: the detector must decline --------------- #
-        _abstain(
+        _abstain_at_low_sun(
             "ABSTAIN_01_DAWN_LOW_SUN",
             "Sun below the 10 deg gate. Shadow azimuth is dominated by terrain "
-            "slope, so no automated fraud verdict may be issued.",
-            -1.2921, 36.8219, "2026-09-22T05:35:00Z",
+            "slope, so no automated fraud verdict may be issued and the asset is "
+            "routed to human review plus C2PA provenance and pHash dedup. The "
+            "timestamp is FOUND by probing for a ~5 deg dawn rather than guessed: "
+            "a hand-written 05:35 UTC put the equatorial sun 30 deg up.",
+            -1.2921, 36.8219, "2026-09-22",
             expected_verdict="REVIEW_LOW_SUN_UNDETERMINED",
         ),
         _abstain(
@@ -286,11 +496,20 @@ def validate(fixtures: list) -> list:
                     f"required {REQUIRED_FIXTURE_MARGIN_DEG} deg — too close to "
                     "the fraud threshold to be demo-safe"
                 )
-        if f["kind"] == "fraud" and f["angular_error_deg"] < 90.0:
-            problems.append(
-                f"{f['scenario_id']}: fraud error {f['angular_error_deg']} deg is "
-                "too small to be a convincing impossibility"
-            )
+        if f["kind"] == "fraud":
+            # The bar is attack-class-aware. A falsified CLOCK inverts the sun
+            # by ~180 deg, so require near-180. A falsified LOCATION can never
+            # do better than the divergence between the two sites' solar paths,
+            # which is bounded below 180 by construction — for Kilifi vs Ankara
+            # the maximum over a whole day is ~88.5 deg. 45 deg is still 3.75x
+            # the 12 deg tolerance, so it is a decisive detection; 90 deg was an
+            # arbitrary bar that made a physically real attack unrepresentable.
+            bar = f.get("fraud_min_error_deg", 90.0)
+            if f["angular_error_deg"] < bar:
+                problems.append(
+                    f"{f['scenario_id']}: fraud error {f['angular_error_deg']} deg "
+                    f"is below the {bar} deg minimum for this attack class"
+                )
     return problems
 
 
