@@ -33,6 +33,25 @@ To ensure all three teammates can code simultaneously from Minute 1 without bloc
 
 ---
 
+> **CORRECTION (v1.2.0) — the React pin pointed at a version that was never published.**
+>
+> This document originally pinned `react@19.0.0-rc-66855b96-20241015` (and the
+> matching `@types/react` RC). That version returns **HTTP 404 from the npm
+> registry** — it was never published. The correct pin is the RC that
+> `next@15.0.0` peer-requires:
+>
+> ```
+> next@15.0.0  ->  peer react@"^18.2.0 || 19.0.0-rc-65a56d0e-20241020"
+> ```
+>
+> so React is now `19.0.0-rc-65a56d0e-20241020`. There is no `@types/react`
+> 19.0.0-rc line on the registry at all (both spec pins 404), so the types are
+> pinned to `^19.0.0`, which matches the published React 19 line.
+>
+> Symptom: `npm install` failed with `ERESOLVE` — `Found: react@undefined`,
+> peer conflict against `next@15.0.0`. A "deterministic dependency
+> specification" that cannot be installed is not deterministic.
+
 ## 2. Deterministic Dependency Specifications
 
 To eliminate "works on my machine" version mismatches across Windows, macOS, and Linux, all versions are strictly pinned.
@@ -79,8 +98,8 @@ python-multipart==0.0.9
   },
   "dependencies": {
     "next": "15.0.0",
-    "react": "19.0.0-rc-66855b96-20241015",
-    "react-dom": "19.0.0-rc-66855b96-20241015",
+    "react": "19.0.0-rc-65a56d0e-20241020",
+    "react-dom": "19.0.0-rc-65a56d0e-20241020",
     "lucide-react": "^0.453.0",
     "react-compare-slider": "^3.0.1",
     "clsx": "^2.1.1",
@@ -89,8 +108,8 @@ python-multipart==0.0.9
   "devDependencies": {
     "typescript": "^5.6.2",
     "@types/node": "^22.7.4",
-    "@types/react": "^19.0.0-rc-66855b96-20241015",
-    "@types/react-dom": "^19.0.0-rc-66855b96-20241015",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13"
   }
