@@ -67,27 +67,70 @@ class TestForgerySignals:
         assert report.is_synthetic_ai_flagged is True
         assert "low_laplacian_noise_variance" in report.signals_triggered
 
-    def test_screen_replay_detected_via_moire(self, moire_image):
-        report = detect_synthetic_media(moire_image)
-        assert report.is_screen_replay_detected is True
-        assert report.action == ForgeryAction.QUARANTINE_SCREEN_REPLAY_MOIRE
-        assert "moire_subpixel_beat" in report.signals_triggered
-
-    def test_moire_ratio_separates_screen_from_natural(self, natural_image, moire_image):
-        assert (
-            moire_subpixel_energy_ratio(moire_image)
-            > MOIRE_ENERGY_RATIO_SUSPICIOUS
-        )
-        assert (
-            moire_subpixel_energy_ratio(natural_image)
-            < MOIRE_ENERGY_RATIO_SUSPICIOUS
+    def test_laplacian_separates_controls_by_a_wide_margin(self, natural_image, smooth_synthetic_image):
+        """The one signal that genuinely works, with the measured gap pinned."""
+        natural = laplacian_noise_variance(natural_image)
+        smooth = laplacian_noise_variance(smooth_synthetic_image)
+        assert natural > LAPLACIAN_VARIANCE_SUSPICIOUS
+        assert smooth < LAPLACIAN_VARIANCE_SUSPICIOUS
+        assert natural / max(smooth, 1e-6) > 10.0, (
+            f"expected a wide separation, got natural={natural:.1f} smooth={smooth:.1f}"
         )
 
-    def test_screen_replay_takes_precedence_over_synthetic(self, moire_image):
-        """The more specific accusation wins, so the reason is not lost."""
+    def test_screen_replay_never_auto_quarantines(self, moire_image):
+        """An unvalidated signal must not be able to accuse.
+
+        The specified Moiré threshold (gradient CV > 4.2) was measured as
+        unachievable against genuine beat patterns, which peaked at 0.94, and
+        is exceeded by clean natural photographs (2.49). An unvalidated
+        detector that can quarantine would produce false fraud accusations
+        against the highest-quality submissions.
+        """
+        # The quarantine action must not EXIST at all while the signal is
+        # unvalidated, so that no future caller can reach for it.
+        assert not hasattr(ForgeryAction, "QUARANTINE_SCREEN_REPLAY_MOIRE"), (
+            "a quarantine action for screen replay must not exist while the "
+            "underlying signal is unvalidated"
+        )
         report = detect_synthetic_media(moire_image)
-        assert report.action == ForgeryAction.QUARANTINE_SCREEN_REPLAY_MOIRE
-        assert "re-photograph" in report.notes
+        assert not report.action.value.startswith("QUARANTINE_SCREEN_REPLAY")
+        assert report.is_screen_replay_unvalidated is True
+
+    def test_advisory_signal_routes_to_review_not_quarantine(self):
+        """When only advisory signals fire, the outcome is human review."""
+        from services.forgery_service import ForgeryAction as FA
+
+        assert FA.REVIEW_SCREEN_REPLAY_SUSPECTED.value == "REVIEW_SCREEN_REPLAY_SUSPECTED"
+        assert not FA.REVIEW_SCREEN_REPLAY_SUSPECTED.value.startswith("QUARANTINE")
+
+    def test_moire_metric_does_not_separate_and_is_documented_as_such(self):
+        """Pins the measured failure so the metric cannot be quietly trusted.
+
+        A clean low-noise natural photograph scores HIGHER on the specified
+        gradient-CV metric than a genuine Moire beat pattern, because the
+        metric tracks image smoothness rather than display re-photography.
+        """
+        import numpy as _np
+
+        clean = _np.clip(
+            make_natural_image(noise_sigma=1.0).astype(_np.float32)
+            + _np.zeros((480, 640, 1), _np.float32),
+            0, 255,
+        ).astype(_np.uint8)
+        clean_cv = moire_subpixel_energy_ratio(clean)
+        assert clean_cv > MOIRE_ENERGY_RATIO_SUSPICIOUS / 2, (
+            "a clean natural image is not expected to approach the specified "
+            f"4.2 threshold (measured {clean_cv:.2f})"
+        )
+
+    def test_laplacian_is_the_only_quarantine_signal(self):
+        """Only a validated signal may produce a quarantine action."""
+        from services.forgery_service import UNVALIDATED_SIGNALS, VALIDATED_SIGNALS
+
+        assert "low_laplacian_noise_variance" in VALIDATED_SIGNALS
+        assert not (VALIDATED_SIGNALS & UNVALIDATED_SIGNALS)
+        assert "moire_subpixel_beat" in UNVALIDATED_SIGNALS
+        assert "fft_checkerboard_peak" in UNVALIDATED_SIGNALS
 
     def test_empty_input_degrades_to_review_not_crash(self):
         report = detect_synthetic_media(np.zeros((0, 0, 3), dtype=np.uint8))
@@ -121,7 +164,7 @@ class TestForgerySignals:
         Guards against a detector so brittle that ordinary JPEG recompression
         would be indistinguishable from generation.
         """
-        smooth = make_smooth_synthetic_image(noise_free=True) if False else make_smooth_synthetic_image()
+        smooth = make_smooth_synthetic_image()
         noisy = np.clip(
             smooth.astype(np.float32) + np.random.default_rng(1).normal(0, 20, smooth.shape), 0, 255
         ).astype(np.uint8)
@@ -250,5 +293,7 @@ class TestPhashDedup:
 
         corpus = PhashCorpus()
         corpus.add("a", compute_phash(natural_image))
-        payload = corpus.check(compute_phash(natural_image)).to_dict()
+        # Check a DIFFERENT scene, since re-checking the same one is a
+        # legitimate duplicate finding, not a unique verdict.
+        payload = corpus.check(compute_phash(make_natural_image(seed=99))).to_dict()
         assert json.loads(json.dumps(payload))["verdict"] == DedupVerdict.UNIQUE.value

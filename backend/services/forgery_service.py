@@ -14,30 +14,53 @@ one has a distinct false-positive profile.
      content that makes a real photograph look real.
      Signal: low Laplacian variance.
 
-  2. DIFFUSION UPSCALER CHECKERBOARD
-     Several open upscalers emit a faint periodic grid. That grid is a single
-     strong spectral peak in the 2D FFT magnitude spectrum, once the DC
-     component at the centre is masked out.
-     Signal: elevated high-frequency peak-to-average ratio.
+  2. DIFFUSION UPSCALER CHECKERBOARD  [ADVISORY — NOT VALIDATED]
+     Several open upscalers emit a faint periodic grid, which should appear as a
+     dominant spectral peak in the 2D FFT magnitude spectrum once DC is masked.
+     Measured on synthetic controls this signal does NOT separate: natural 1.30,
+     over-smoothed 2.14, screen-replay 2.28, against a specified threshold of
+     3.80. It never fires on any control we can construct. It is therefore
+     reported but NEVER auto-quarantines.
 
-  3. SCREEN RE-PHOTOGRAPHY (the "photograph my 4K iPad" attack)
-     An LCD/OLED subpixel array is a physical periodic RGB grid. Imaging that
-     grid with a camera whose sensor pitch is close to the display's creates
-     Moiré beat interference — a low-frequency ripple with a characteristic
-     gradient-energy signature that no natural scene produces.
-     Signal: high coefficient of variation of the Sobel gradient magnitude.
+  3. SCREEN RE-PHOTOGRAPHY  [ADVISORY — THE SPECIFIED METRIC DOES NOT WORK]
+     The design document specified
+     ``np.std(Sobel gradient magnitude) / np.mean(...) > 4.2``. That threshold
+     was tested against genuine Moire beat patterns (two nearby spatial
+     frequencies producing a spatially modulated beat, at pitches 2-4 px and
+     amplitudes 60-110, with and without a slowly varying envelope). Measured
+     coefficient of variation ranged 0.63-0.94.
 
-IMPORTANT HONESTY NOTE
-----------------------
-These are *heuristic* detectors, not classifiers. The thresholds below are
-engineering defaults tuned for outdoor environmental photography, not values
-derived from a labelled training set. A judge who asks "what is the false
-positive rate on your corpus?" should be told the truth: they are calibrated
-for demonstration, and production deployment requires a labelled corpus and
-ROC analysis. ``confidence_score`` here therefore reflects detector agreement,
-NOT a calibrated posterior probability — the statistically honest place for a
-calibrated number is the JEV RLCD decision layer, which consumes these
-features alongside others.
+     **The threshold is not achievable by the phenomenon it claims to detect,
+     and the metric inverts.** A clean, well-exposed natural photograph scored
+     2.49 — HIGHER than every genuine Moire construction we built, because the
+     denominator (mean gradient) shrinks as an image gets smoother. Shipping
+     this as specified would have produced false fraud accusations against
+     exactly the high-quality, low-noise photographs a restoration programme is
+     most careful to submit.
+
+     We also tried a physically-motivated alternative: a subpixel R/B channel
+     phase offset measured with `cv2.phaseCorrelate`, which is the direct
+     signature of a subpixel RGB stripe array. On these images it returned
+     nonsense (lag ~268 px on a 640 px frame, response 0.03), so it is not
+     usable as-is either.
+
+     Screen-replay detection is therefore **UNVALIDATED** and is carried as an
+     advisory signal only. It routes to human review. It does not quarantine.
+     Validating it properly requires a labelled corpus of genuine rephotographed
+     displays, which this project does not have.
+
+CALIBRATION STATUS — READ THIS BEFORE QUOTING A NUMBER
+-----------------------------------------------------
+Only signal 1 (Laplacian variance) currently separates its controls: natural
+2897 vs over-smoothed 2.4, a 36x gap against a threshold of 80. That gap is
+real, but it was measured on SYNTHETIC controls, not a labelled corpus of real
+photographs and real diffusion outputs. It is a strong engineering prior, not a
+calibrated classifier.
+
+``confidence_score`` reflects detector agreement, NOT a calibrated posterior.
+The statistically honest place for a calibrated probability is the JEV RLCD
+decision layer, which consumes these features alongside others and owns the
+confidence claim.
 """
 
 from __future__ import annotations
@@ -67,11 +90,19 @@ MOIRE_ENERGY_RATIO_SUSPICIOUS = 4.2
 #: Central FFT region to mask before measuring the high-frequency spectrum.
 _FFT_CENTRE_MASK_PX = 20
 
+#: Signals that have been measured to separate anything. Only these may trigger
+#: an automated quarantine. Everything else is advisory and routes to a human.
+VALIDATED_SIGNALS = frozenset({"low_laplacian_noise_variance"})
+
+#: Advisory signals that are reported but must never auto-quarantine.
+UNVALIDATED_SIGNALS = frozenset({"fft_checkerboard_peak", "moire_subpixel_beat"})
+
 
 class ForgeryAction(str, Enum):
     NATURAL_SENSOR_CONFIRMED = "NATURAL_SENSOR_CONFIRMED"
     QUARANTINE_SYNTHETIC = "QUARANTINE_SYNTHETIC"
-    QUARANTINE_SCREEN_REPLAY_MOIRE = "QUARANTINE_SCREEN_REPLAY_MOIRE"
+    #: Advisory only. The underlying signal is unvalidated and must not accuse.
+    REVIEW_SCREEN_REPLAY_SUSPECTED = "REVIEW_SCREEN_REPLAY_SUSPECTED"
     REVIEW_INSUFFICIENT = "REVIEW_INSUFFICIENT_EVIDENCE"
 
 
@@ -85,6 +116,9 @@ class ForgeryReport:
     moire_subpixel_energy_ratio: float
     signals_triggered: tuple
     notes: str
+    #: Always True. Screen-replay detection is unvalidated and must never be
+    #: presented to an auditor as a confirmed finding.
+    is_screen_replay_unvalidated: bool = True
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -138,9 +172,16 @@ def fft_peak_ratio(image_rgb: np.ndarray) -> float:
 def moire_subpixel_energy_ratio(image_rgb: np.ndarray) -> float:
     """Coefficient of variation of Sobel gradient magnitude.
 
-    Moiré beat interference produces a periodic ripple in local contrast, so
-    the gradient-magnitude distribution becomes heavy-tailed: its standard
-    deviation jumps relative to its mean. Natural scenes sit near 1.
+    Moiré beat interference was expected to make the gradient-magnitude
+    distribution heavy-tailed, so its standard deviation would jump relative to
+    its mean.
+
+    MEASURED BEHAVIOUR: this does not work as a detector. Genuine Moire beat
+    patterns (two nearby spatial frequencies, pitches 2-4 px, amplitudes
+    60-110, with and without a slowly varying envelope) yield 0.63-0.94, while
+    the specified threshold is 4.2 and clean natural photographs reach 2.49.
+    The metric correlates with image SMOOTHNESS, not with display re-photography.
+    Retained as a diagnostic only.
     """
     gray = _to_gray(image_rgb).astype(np.float64)
     gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
@@ -186,31 +227,42 @@ def detect_synthetic_media(image_rgb: np.ndarray) -> ForgeryReport:
     if moire > MOIRE_ENERGY_RATIO_SUSPICIOUS:
         signals.append("moire_subpixel_beat")
 
-    is_screen_replay = moire > MOIRE_ENERGY_RATIO_SUSPICIOUS
-    # Screen replay is a stronger, more specific accusation than "looks
-    # synthetic", so it takes precedence in the action.
-    is_synthetic = lap_var < LAPLACIAN_VARIANCE_SUSPICIOUS or peak_ratio > FFT_PEAK_RATIO_SUSPICIOUS
+    # Only validated signals may accuse. Advisory signals can only escalate to
+    # human review.
+    validated_hits = [s for s in signals if s in VALIDATED_SIGNALS]
+    advisory_hits = [s for s in signals if s in UNVALIDATED_SIGNALS]
 
-    if is_screen_replay:
-        action = ForgeryAction.QUARANTINE_SCREEN_REPLAY_MOIRE
-        notes = (
-            "Periodic subpixel beat interference consistent with the image "
-            "being a re-photograph of a physical display, not a direct capture."
-        )
-    elif is_synthetic:
+    is_synthetic = lap_var < LAPLACIAN_VARIANCE_SUSPICIOUS
+    is_screen_replay_suspected = moire > MOIRE_ENERGY_RATIO_SUSPICIOUS
+
+    if validated_hits:
         action = ForgeryAction.QUARANTINE_SYNTHETIC
         notes = (
             "High-frequency signature is inconsistent with a CMOS sensor: "
-            "either diffusion-generated or heavily post-processed."
+            "either diffusion-generated or heavily post-processed. Quarantine "
+            "rests on the Laplacian-variance signal, which is the only one "
+            "measured to separate its controls."
+        )
+    elif advisory_hits:
+        action = ForgeryAction.REVIEW_SCREEN_REPLAY_SUSPECTED
+        notes = (
+            "Advisory signal(s) "
+            f"{advisory_hits} fired. These are NOT validated against a labelled "
+            "corpus, so the asset is routed to human review rather than "
+            "quarantined. Note that the specified screen-replay threshold "
+            "(gradient CV > 4.2) was measured as unachievable against genuine "
+            "Moire patterns, which peaked at 0.94, and is exceeded by some "
+            "clean natural photographs (2.49)."
         )
     else:
         action = ForgeryAction.NATURAL_SENSOR_CONFIRMED
-        notes = "All three forensic signals are within natural-sensor range."
+        notes = "All forensic signals are within natural-sensor range."
 
     return ForgeryReport(
         action=action,
         is_synthetic_ai_flagged=bool(is_synthetic),
-        is_screen_replay_detected=bool(is_screen_replay),
+        is_screen_replay_detected=bool(is_screen_replay_suspected and not is_synthetic),
+        is_screen_replay_unvalidated=True,
         laplacian_noise_variance=round(lap_var, 2),
         fft_frequency_peak_ratio=round(peak_ratio, 2),
         moire_subpixel_energy_ratio=round(moire, 2),

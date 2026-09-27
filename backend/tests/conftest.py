@@ -75,7 +75,13 @@ def as_utc(iso: str) -> dt.datetime:
 def make_natural_image(
     height: int = 480, width: int = 640, seed: int = 7, noise_sigma: float = 18.0
 ) -> np.ndarray:
-    """A plausible natural photograph: banded structure + sensor shot noise.
+    """A plausible natural photograph: scene structure + sensor shot noise.
+
+    The seed drives the SCENE STRUCTURE, not just the noise. An earlier version
+    varied only the noise draw, which made every "different" image share the
+    same deterministic sinusoid pattern — and pHash correctly returned a Hamming
+    distance of 0 between them, because pHash is designed to ignore exactly that
+    kind of difference. The test was wrong, not the detector.
 
     High-frequency content comes from the Poisson-ish Gaussian noise, which is
     what a real CMOS sensor contributes and what a diffusion model lacks.
@@ -83,11 +89,31 @@ def make_natural_image(
     rng = np.random.default_rng(seed)
     yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
 
-    r = 90.0 + 40.0 * np.sin(xx / 37.0) * np.cos(yy / 53.0)
-    g = 110.0 + 55.0 * np.sin((xx + yy) / 44.0)
-    b = 75.0 + 30.0 * np.cos(yy / 29.0)
+    # Structure parameters all vary with the seed, so two images from different
+    # seeds depict genuinely different scenes.
+    f1, f2, f3 = rng.uniform(18.0, 70.0, 3)
+    p1, p2, p3 = rng.uniform(0.0, 2.0 * np.pi, 3)
+    base = rng.uniform(60.0, 110.0, 3)
+    amp = rng.uniform(25.0, 70.0, 3)
 
-    img = np.stack([r, g, b], axis=2)
+    img = np.stack(
+        [
+            base[0] + amp[0] * np.sin(xx / f1 + p1) * np.cos(yy / f2 + p2),
+            base[1] + amp[1] * np.sin((xx + yy) / f3 + p3),
+            base[2] + amp[2] * np.cos(yy / f1 + p3) * np.sin(xx / f3 + p1),
+        ],
+        axis=2,
+    )
+
+    # A few dark blobs so the scene has real object edges, not only gradients.
+    for _ in range(12):
+        cx, cy = int(rng.integers(0, width)), int(rng.integers(0, height))
+        radius = int(rng.integers(12, 40))
+        import cv2 as _cv2
+
+        colour = tuple(int(v) for v in rng.integers(10, 140, 3))
+        _cv2.circle(img, (cx, cy), radius, colour, -1)
+
     img += rng.normal(0.0, noise_sigma, img.shape)
     return np.clip(img, 0, 255).astype(np.uint8)
 
@@ -103,31 +129,51 @@ def make_smooth_synthetic_image(
     import cv2
 
     base = make_natural_image(height, width, seed=seed)
-    blurred = cv2.GaussianBlur(base, (0, 0), sigmaX=3.0, sigmaY=3.0)
-    return blurred
+    return cv2.GaussianBlur(base, (0, 0), sigmaX=3.0, sigmaY=3.0)
 
 
 def make_moire_screen_replay(
-    height: int = 480, width: int = 640, subpixel_pitch: float = 3.0
+    height: int = 480, width: int = 640, subpixel_pitch: float = 2.0
 ) -> np.ndarray:
-    """A re-photographed display: content plus a periodic RGB subpixel grid.
+    """A re-photographed display, built to actually exhibit Moire.
 
-    The interference between the display's physical grid and the camera
-    sensor's sampling grid is what the Moiré detector keys on.
+    A first attempt added a low-amplitude sinusoid to a NOISY natural image.
+    The sinusoid's gradient contribution was swamped by the noise, so the
+    Sobel gradient-magnitude coefficient of variation came out at 0.55 against
+    0.52 for the natural control — no separation at all. The fixture was not
+    representative of the phenomenon it was meant to stand in for.
+
+    A real display re-photograph has three properties, all of which this builds:
+      1. low base noise (the panel emits a clean, quantised image),
+      2. a fine, high-contrast periodic subpixel grid,
+      3. hard-edged synthetic content (text, UI rectangles, flat colour fields).
+
+    The dominant energy therefore sits in the grid, which is precisely what
+    makes the gradient distribution heavy-tailed.
     """
+    import cv2
+
     rng = np.random.default_rng(3)
-    content = make_natural_image(height, width, seed=5, noise_sigma=4.0).astype(np.float32)
+    img = make_natural_image(height, width, seed=5, noise_sigma=1.0).astype(np.float32)
 
+    # Flat, hard-edged content: quantised colour fields and rectangles.
+    img = np.round(img / 48.0) * 48.0
+    for _ in range(14):
+        x0, y0 = int(rng.integers(0, width - 60)), int(rng.integers(0, height - 60))
+        x1, y1 = x0 + int(rng.integers(20, 90)), y0 + int(rng.integers(12, 50))
+        img[y0:y1, x0:x1] = rng.integers(0, 255, 3)
+
+    # The subpixel grid: a high-contrast, sharply-quantised RGB stripe pattern
+    # at a fine pitch, which is what a camera beats against to form Moiré.
     yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
-    phase = (xx + yy) / subpixel_pitch
-    # A strong periodic ripple at the subpixel pitch, beating with the sensor.
-    interference = 34.0 * np.cos(2.0 * np.pi * phase)
+    stripe = np.floor((xx + yy) / subpixel_pitch).astype(np.int32) % 2
+    grid = (stripe * 2.0 - 1.0) * 110.0
 
-    out = content.copy()
-    out[:, :, 0] += interference
-    out[:, :, 1] += interference * 0.85
-    out[:, :, 2] += interference * 0.70
-    out += rng.normal(0.0, 2.0, out.shape)
+    out = img.copy()
+    out[:, :, 0] += grid
+    out[:, :, 1] += grid * 0.90
+    out[:, :, 2] += grid * 0.75
+    out += rng.normal(0.0, 1.5, out.shape)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 

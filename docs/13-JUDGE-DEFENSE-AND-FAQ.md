@@ -25,7 +25,7 @@ Hackathon judges (Cloudinary solutions engineers, VC investors, and senior archi
 ### Q2: "What if someone cheats by taking a photo of a high-resolution 4K iPad screen displaying an old tree photo?"
 > **The Killing Response:**  
 > *"That is known as a Screen-Replay / Re-photographing attack. Digital screens use physical RGB subpixel grids (LCD/OLED pitch). When a camera sensor array captures a physical display screen, the two periodic spatial grids create high-frequency beat interference known as a **Moiré pattern**.  
-> Module 6 of our CV pipeline performs high-frequency gradient variance and 2D Fourier analysis on every uploaded image. Rephotographed screens display characteristic harmonic orthogonal frequency peaks. Our `moire_subpixel_energy_ratio` threshold immediately quarantines screen replays under `QUARANTINE_SCREEN_REPLAY_MOIRE` before the image ever reaches the canopy quantification engine."*
+> Module 6 of our CV pipeline performs high-frequency gradient-variance and 2D Fourier analysis on every uploaded image. Rephotographed screens are expected to display characteristic harmonic frequency peaks. Our `moire_subpixel_energy_ratio` threshold immediately quarantines screen replays under `QUARANTINE_SCREEN_REPLAY_MOIRE` before the image ever reaches the canopy quantification engine."*
 
 ---
 

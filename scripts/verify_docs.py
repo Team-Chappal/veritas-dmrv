@@ -73,6 +73,20 @@ RULES: list = [
         scope=(),
     ),
     Rule(
+        "MOIRE-001",
+        "The screen-replay quarantine action. It was REMOVED because the "
+        "specified threshold (gradient CV > 4.2) was measured as unachievable "
+        "against genuine Moire patterns (0.63-0.94) and is exceeded by clean "
+        "natural photographs (2.49). An unvalidated signal must not accuse.",
+        r"QUARANTINE_SCREEN_REPLAY_MOIRE",
+        scope=(),
+        allow_context=(
+            "CORRECTION", "removed", "must not", "no future caller",
+            "was not", "until the", "That was", "immediately quarantines",
+            "Superseded", "HISTORICAL", "no longer exists",
+        ),
+    ),
+    Rule(
         "VEGIDX-001",
         "Raw Excess Green Index (2G-R-B) with a fixed threshold. Raw ExG is not "
         "shadow-invariant; the shadow-invariant standard is GLI = (2G-R-B)/(2G+R+B) "

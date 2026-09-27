@@ -491,61 +491,69 @@ def apply_vm0047_uncertainty_discount(gross_tco2e: float, sampling_error_pct: fl
 
 ## 6. Algorithmic Module 6: Synthetic Media & Deepfake Foliage Detection
 
-To prevent dishonest developers from submitting photorealistic AI-generated reforestation imagery (e.g., Midjourney v6, Flux, Stable Diffusion), the platform runs a frequency-domain residual analysis:
+> **SUPERSEDED in v1.2.0 — this code sample is retained for history only.**
+> The live implementation is `backend/services/forgery_service.py`, which
+> implements the validated/advisory split recorded in the correction note above.
+> Note especially that the `verdict_action` line below still assigns a
+> screen-replay **quarantine**, which no longer exists. Do not implement from
+> this sample.
+
+To detect AI-generated or over-smoothed imagery the platform runs a
+frequency-domain residual analysis:
 
 ```python
 def detect_synthetic_ai_artifacts(img_rgb: np.ndarray) -> dict:
     """
-    Analyzes high-frequency noise residuals and Fourier spectrum to detect 
-    generative diffusion model artifacts in outdoor environmental photos.
+    HISTORICAL. Superseded by services/forgery_service.py — see the correction
+    note at the head of this section. Retained to document what was specified;
+    note that the screen-replay quarantine action below has been removed.
     """
     gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
-    
-    # 1. High-frequency Laplacian variance (diffusion models show smoothed micro-noise)
+
+    # 1. High-frequency Laplacian variance (VALIDATED — may auto-quarantine)
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-    
-    # 2. 2D Fast Fourier Transform (FFT) for grid checkerboard artifacts
-    f = np.fft.fft2(gray)
-    fshift = np.fft.fftshift(f)
-    magnitude_spectrum = 20 * np.log(np.abs(fshift) + 1e-7)
-    
-    # Peak-to-average ratio in high frequencies
+
+    # 2. 2D FFT for grid checkerboard artefacts (ADVISORY — review only)
+    f = np.fft.fftshift(np.fft.fft2(gray))
+    magnitude_spectrum = 20 * np.log(np.abs(f) + 1e-7)
     h, w = gray.shape
-    center_y, center_x = h // 2, w // 2
-    high_freq_region = magnitude_spectrum.copy()
-    high_freq_region[center_y-20:center_y+20, center_x-20:center_x+20] = 0
-    fft_peak_ratio = float(np.max(high_freq_region) / (np.mean(high_freq_region) + 1e-7))
-    
-    # 3. Screen-Replay & Moiré Subpixel Interference Detection (Anti-iPad/Monitor Fraud)
-    # Rephotographed screens exhibit periodic spatial beat frequencies (Moiré) and RGB color-filter grid harmonics
+    cy, cx = h // 2, w // 2
+    high_freq = magnitude_spectrum.copy()
+    high_freq[cy - 20:cy + 20, cx - 20:cx + 20] = 0
+    fft_peak_ratio = float(np.max(high_freq) / (np.mean(high_freq) + 1e-7))
+
+    # 3. Sobel gradient CV for Moiré (ADVISORY — review only; see correction)
     gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
     gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-    gradient_magnitude = np.sqrt(gx**2 + gy**2)
-    moire_energy_ratio = float(np.std(gradient_magnitude) / (np.mean(gradient_magnitude) + 1e-7))
+    grad = np.sqrt(gx**2 + gy**2)
+    moire_ratio = float(np.std(grad) / (np.mean(grad) + 1e-7))
 
-    # Heuristic multi-modal scoring
-    is_screen_replay = moire_energy_ratio > 4.2
-    is_suspicious_ai = laplacian_var < 80.0 or fft_peak_ratio > 3.8 or is_screen_replay
-    confidence = 0.96 if is_suspicious_ai else 0.99
-
-    verdict_action = "NATURAL_SENSOR_CONFIRMED"
-    if is_screen_replay:
-        verdict_action = "QUARANTINE_SCREEN_REPLAY_MOIRE"
-    elif is_suspicious_ai:
-        verdict_action = "QUARANTINE_SYNTHETIC"
-
-    return {
-        "is_synthetic_ai_flagged": is_suspicious_ai,
-        "is_screen_replay_detected": is_screen_replay,
-        "laplacian_noise_variance": round(laplacian_var, 2),
-        "fft_frequency_peak_ratio": round(fft_peak_ratio, 2),
-        "moire_subpixel_energy_ratio": round(moire_energy_ratio, 2),
-        "confidence_score": confidence,
-        "action": verdict_action
-    }
+    is_screen_replay = moire_ratio > 4.2
+    is_suspicious_ai = laplacian_var < 80.0 or fft_peak_ratio > 3.8
+    ...
 ```
 
----
+### 6.1 Signal Authority Matrix
+
+| Signal | Threshold | Measured on synthetic controls | Authority |
+| :--- | :--: | :--- | :--- |
+| Laplacian variance | `< 80.0` | natural **2897** vs over-smoothed **2.4** — 36× gap | **May auto-quarantine** |
+| FFT peak ratio | `> 3.8` | natural 1.30, smoothed 2.14, screen 2.28 — never fires | Advisory → human review |
+| Sobel gradient CV | `> 4.2` | Moire constructions 0.63–0.94; clean natural photo **2.49** | Advisory → human review |
+
+### 6.2 What We Claim to Judges
+
+`docs/13-JUDGE-DEFENSE-AND-FAQ.md` Q2 originally asserted that a suspected screen
+replay "immediately quarantines" under `QUARANTINE_SCREEN_REPLAY_MOIRE`. That was
+not supportable and has been reworded. The defensible position is:
+
+- the **Laplacian-variance** signal is justified and separates diffusion-smoothed
+  foliage from sensor captures by a wide margin;
+- the **screen-replay** signal is unvalidated and routes a human to review;
+- validating it requires a labelled corpus of genuine rephotographed displays,
+  which this project does not have.
+
+Overclaiming here is the specific failure this project exists to prevent.
 
 ## 7. Algorithmic Module 7: EUDR Article 9 Spatial Polygon & Cadastral Compliance
 
