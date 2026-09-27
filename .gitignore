@@ -40,3 +40,4 @@ fixtures/generated/
 
 # Hackathon organizer material - not redistributed in this repo
 Code Cubicle 6.0 Problem Statements.pdf
+frontend/next-env.d.ts
