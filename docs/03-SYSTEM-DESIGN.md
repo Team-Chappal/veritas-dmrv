@@ -1,0 +1,620 @@
+# Low-Level System Design & Algorithm Specifications (LLD)
+## Project Name: VERITAS dMRV
+**Document Version:** 1.1.0 (Audited by Code Review Pro & Segment Anything Skills)  
+**Target:** Computer Vision Engineers, Backend Developers, and Data Scientists  
+
+---
+
+## 1. Algorithmic Module 1: Solar-Ephemeris Astronomical Physics Verification
+
+### 1.1 Objective
+Detect metadata tampering (spoofed GPS, manipulated timestamps, or indoor nursery photos passed off as remote field plantings) by verifying that physical image shadow vectors match true astronomical solar mechanics.
+
+### 1.2 Mathematical Derivation
+Given an observer’s geographical coordinates $(\phi, \lambda)$ (latitude, longitude) and UTC timestamp $T$:
+
+1. **Julian Day Calculation ($JD$):**
+   $$JD = \text{integer}\left(365.25(Y + 4716)\right) + \text{integer}\left(30.6001(M + 1)\right) + D + \frac{UT}{24} - 1524.5$$
+2. **Solar Declination ($\delta$) and Equation of Time ($EoT$):**
+   $$\text{Fractional Year } \gamma = \frac{2\pi}{365} \left(\text{day\_of\_year} - 1 + \frac{\text{hour} - 12}{24}\right)$$
+   $$\delta = 0.006918 - 0.399912 \cos(\gamma) + 0.070257 \sin(\gamma) - 0.006758 \cos(2\gamma) + 0.000907 \sin(2\gamma)$$
+3. **True Solar Time ($TST$) and Solar Hour Angle ($H$):**
+   $$TST = \left(UT \times 60 + EoT + 4\lambda\right) \pmod{1440}$$
+   $$H = \left(\frac{TST}{4} - 180\right)^\circ$$
+4. **Solar Elevation ($\alpha$) and Azimuth ($\theta_s$):**
+
+   Let $\Theta_z$ be the solar zenith angle, $\Theta_z = 90^\circ - \alpha$.
+
+   $$\cos(\Theta_z) = \sin(\phi)\sin(\delta) + \cos(\phi)\cos(\delta)\cos(H)$$
+   $$\alpha = 90^\circ - \Theta_z$$
+   $$\cos(\theta_s) = \frac{\sin(\delta) - \sin(\phi)\cos(\Theta_z)}{\cos(\phi)\sin(\Theta_z)}$$
+
+   **Azimuth Convention.** $\theta_s$ is measured in degrees from **True North, clockwise** — the NOAA / `pvlib` convention. Where $H > 0$ (afternoon, west of the meridian) the principal $\arccos$ solution lies in the wrong half-plane and is reflected: $\theta_s = 360^\circ - \theta_s$.
+
+   *(Note: $\cos(\theta_s)$ is clipped to $[-1.0, 1.0]$ to prevent numerical floating-point domain errors, and the denominator is offset by $\epsilon = 10^{-7}$ to avoid division by zero as $\Theta_z \to 0$ at solar zenith.)*
+
+   > **CORRECTION (v1.2.0).** This step previously read
+   > $$\cos(\theta_s) = \frac{\sin(\alpha)\sin(\phi) - \sin(\delta)}{\cos(\alpha)\cos(\phi)}$$
+   > which is **not** the NOAA expression and does not agree with the
+   > implementation in §1.3. The implementation was correct; the derivation
+   > printed here was wrong. This mismatch would have let a reviewer conclude
+   > the physics was unsound. Both now use the form above, and the
+   > authoritative implementation delegates to `pvlib` rather than
+   > re-deriving it — see §1.4.
+5. **Expected Physical Shadow Azimuth ($\theta_{\text{expected}}$):**
+   $$\theta_{\text{expected}} = (\theta_s + 180^\circ) \pmod{360^\circ}$$
+6. **Error Threshold Criterion:**
+   $$\Delta \theta = \min\left(|\theta_{\text{expected}} - \theta_{\text{observed}}|, 360^\circ - |\theta_{\text{expected}} - \theta_{\text{observed}}|\right)$$
+   * If $\Delta \theta \le 12.0^\circ$: Physics verified (`PASS`).
+   * If $\Delta \theta > 12.0^\circ$: Astronomical anomaly detected (`QUARANTINE_FRAUD`).
+
+### 1.3 Production Implementation — Superseded
+
+> **SUPERSEDED in v1.2.0. Do not implement from this section.**
+>
+> The code originally printed here has been **removed and replaced by
+> `backend/services/solar_service.py`**, for three reasons:
+>
+> 1. **It re-derived astronomy that already exists.** A hand-rolled NOAA
+>    implementation of solar position is a standing source of sign and
+>    convention bugs. The service delegates to `pvlib.solarposition`, the
+>    reference implementation used by the PV industry, and adds only the
+>    VERITAS-specific shadow-coherence logic on top.
+> 2. **It contained a dead conditional.** The hour-angle line read
+>    `(tst / 4.0) - 180.0 if (tst / 4.0) < 0 else (tst / 4.0) - 180.0` —
+>    both branches were identical, so the expression was a no-op that
+>    *appeared* to handle a branch it did not handle.
+> 3. **Its low-sun gate was unsound.** It rejected only `elevation < 0`.
+>    Between 0° and ~10° of solar elevation a cast shadow is so elongated that
+>    its azimuth is dominated by terrain slope rather than by the sun. The
+>    measured angle is then noise, and a genuine planting photographed at
+>    dawn would be quarantined as fraud.
+
+### 1.4 Authoritative Implementation
+
+**File:** `backend/services/solar_service.py`
+
+The decision ladder, in order:
+
+| # | Condition | Verdict | Rationale |
+| :-- | :--- | :--- | :--- |
+| 1 | No observed shadow azimuth supplied | `REVIEW_INSUFFICIENT_INPUT` | Absence of evidence is not evidence of fraud |
+| 2 | $\alpha < 0°$ | `QUARANTINE_NIGHTTIME_CAPTURE_ANOMALY` | Field photography does not happen at night |
+| 3 | $0° \le \alpha < 10°$ | `REVIEW_LOW_SUN_UNDETERMINED` | Shadow azimuth is terrain-slope-dominated; abstain and fall back to C2PA + pHash |
+| 4 | $\Delta\theta \le 12°$ | `PHYSICS_PASS` | Reported time and location are physically consistent |
+| 5 | $\Delta\theta > 12°$ | `QUARANTINE_SOLAR_MISMATCH` | Reported capture metadata is impossible for the observed image |
+
+**Abstention is a feature.** A forensic tool that always returns a confident
+verdict is a liability. Rule 3 exists specifically so that a ranger shooting at
+dawn is sent to a human rather than being falsely accused.
+
+### 1.5 Fixture Provenance Rule (Mandatory)
+
+**No solar test fixture may ever be hand-written.**
+
+`docs/12-TESTING-AND-QA-STRATEGY.md` originally shipped four such vectors. All
+four were outside their own stated tolerances, and one was physically
+impossible:
+
+| Vector | Documented | Actual (pvlib) | Error | Tolerance |
+| :--- | --: | --: | --: | --: |
+| Nairobi `2026-09-22T08:15:30Z` | 94.2 | **83.6** | 10.6° | ±2.0° |
+| Nairobi `2026-09-22T13:30:00Z` | 268.4 | **271.4** | 3.0° | ±2.0° |
+| Ankara `2026-06-21T10:00:00Z` | 138.5 | **188.1** | **49.6°** | ±2.5° |
+| Berlin `2026-12-21T11:00:00Z` | 173.1 | **179.0** | 5.9° | ±2.5° |
+
+The Ankara case is diagnostic: at 10:00 UTC on the June solstice, solar noon at
+32.85°E is 09:48 UTC, so the sun is 12 minutes *past* the meridian and its
+azimuth **must** be ≈188°. A value of 138.5° cannot occur at any time of day
+there.
+
+Worse, the flagship "legitimate photo" demo fixture cleared the 12° fraud
+threshold by **1.1° of margin** — one refactor away from disqualifying a
+genuine planting, live, on stage.
+
+Fixtures are therefore **generated** by `scripts/gen_solar_fixtures.py`, which:
+
+- emits `expected_shadow_azimuth_deg` from `pvlib`, never from a human;
+- constructs genuine captures by setting the observed shadow to the *computed*
+  expected value plus small terrain-slope jitter, so the error is small by
+  construction;
+- constructs fraud cases by claiming the **wrong time for a real capture**, so
+  the impossibility is geometric rather than asserted;
+- **refuses to write** if any genuine fixture's margin falls below 5°.
+
+Regenerate with `make fixtures`; verify freshness in CI with `make fixtures-check`.
+
+---
+
+## 2. Algorithmic Module 2: OpenCV SIFT + USAC_MAGSAC++ Planar Homography Alignment
+
+### 2.1 Production Computer Vision Implementation
+Includes full error handling, CLAHE normalization, KD-Tree matching, and MAGSAC++ matrix estimation with singular value condition checking:
+
+```python
+import cv2
+import numpy as np
+from typing import Optional, Tuple
+
+def register_field_pair(
+    img_before_rgb: np.ndarray, 
+    img_progress_rgb: np.ndarray
+) -> Tuple[Optional[np.ndarray], float, str]:
+    """
+    Registers the progress photo into the geometric perspective of the baseline anchor.
+    Returns: (warped_image, inlier_ratio, status_message)
+    """
+    if img_before_rgb is None or img_progress_rgb is None:
+        return None, 0.0, "INVALID_INPUT_ARRAYS"
+
+    # 1. CLAHE normalization on Luminance channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    lab1 = cv2.cvtColor(img_before_rgb, cv2.COLOR_RGB2LAB)
+    lab2 = cv2.cvtColor(img_progress_rgb, cv2.COLOR_RGB2LAB)
+    lab1[:, :, 0] = clahe.apply(lab1[:, :, 0])
+    lab2[:, :, 0] = clahe.apply(lab2[:, :, 0])
+    gray1 = cv2.cvtColor(cv2.cvtColor(lab1, cv2.COLOR_LAB2RGB), cv2.COLOR_RGB2GRAY)
+    gray2 = cv2.cvtColor(cv2.cvtColor(lab2, cv2.COLOR_LAB2RGB), cv2.COLOR_RGB2GRAY)
+
+    # 2. SIFT Keypoint & Descriptor Extraction
+    sift = cv2.SIFT_create(nfeatures=5000, contrastThreshold=0.03, edgeThreshold=10)
+    kp1, des1 = sift.detectAndCompute(gray1, None)
+    kp2, des2 = sift.detectAndCompute(gray2, None)
+
+    if des1 is None or des2 is None or len(kp1) < 20 or len(kp2) < 20:
+        return None, 0.0, "INSUFFICIENT_SIFT_FEATURES"
+
+    # 3. Fast FLANN Matching with KD-Trees
+    flann = cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50))
+    matches = flann.knnMatch(des1, des2, k=2)
+
+    # 4. Filter via Lowe's Ratio Test
+    good_matches = []
+    for m_n in matches:
+        if len(m_n) == 2:
+            m, n = m_n
+            if m.distance < 0.75 * n.distance:
+                good_matches.append(m)
+
+    if len(good_matches) < 15:
+        return None, 0.0, "LOW_INLIER_MATCH_COUNT"
+
+    pts_before = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    pts_progress = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+
+    # 5. Robust Homography via USAC_MAGSAC++
+    H, inlier_mask = cv2.findHomography(
+        pts_progress, pts_before,
+        method=cv2.USAC_MAGSAC,
+        ransacReprojThreshold=3.0,
+        maxIters=5000,
+        confidence=0.999
+    )
+
+    if H is None or inlier_mask is None:
+        return None, 0.0, "HOMOGRAPHY_ESTIMATION_FAILED"
+
+    inlier_ratio = float(np.sum(inlier_mask)) / float(len(good_matches))
+
+    # Condition number check to detect degenerate / collinear transforms
+    if np.linalg.cond(H) > 1e6:
+        return None, inlier_ratio, "DEGENERATE_HOMOGRAPHY_MATRIX"
+
+    # 6. Perspective Warp
+    h, w = img_before_rgb.shape[:2]
+    warped_progress = cv2.warpPerspective(
+        img_progress_rgb, H, (w, h), 
+        flags=cv2.INTER_LINEAR, 
+        borderMode=cv2.BORDER_CONSTANT, 
+        borderValue=(0, 0, 0)
+    )
+
+    return warped_progress, round(inlier_ratio, 3), "ALIGNED_SUCCESS"
+
+### 2.2 3D Motion Parallax & Thin Plate Spline (TPS) Non-Planar Compensation
+In drone photogrammetry over uneven terrain or maturing tree canopies, pure planar homography suffers from **motion parallax** (the tops of trees shift relative to ground coordinates due to camera translation $\Delta X, \Delta Y, \Delta Z$ and gimbal pitch/roll changes). 
+
+When condition number $\kappa(H) > 85.0$ or when residual SIFT inlier RMSE exceeds $3.5\text{ px}$, the pipeline triggers local non-rigid deformation via **Thin Plate Splines (TPS)**:
+
+```python
+def register_with_tps_fallback(
+    img_before_rgb: np.ndarray,
+    img_progress_rgb: np.ndarray,
+    pts_src: np.ndarray,
+    pts_dst: np.ndarray
+) -> np.ndarray:
+    """
+    Applies Thin Plate Spline (TPS) local mesh warping when 3D canopy parallax breaks planar homography.
+    """
+    tps = cv2.createThinPlateSplineShapeTransformer()
+    # Format points for OpenCV shape transformer: (1, N, 2)
+    src_shape = pts_src.reshape(1, -1, 2)
+    dst_shape = pts_dst.reshape(1, -1, 2)
+    
+    matches = [cv2.DMatch(i, i, 0) for i in range(len(pts_src))]
+    tps.estimateTransformation(dst_shape, src_shape, matches)
+    
+    warped = tps.warpImage(img_progress_rgb)
+    return warped
+```
+
+---
+
+## 3. Algorithmic Module 3: Radiometric Normalization & Shadow-Invariant Canopy Quantification
+
+### 3.1 Radiometric Calibration via Histogram Matching
+Field photos taken at different dates or under variable cloud cover suffer from distinct solar irradiance, causing false canopy mortality readings under raw RGB subtraction. VERITAS applies **Pseudo-Invariant Feature (PIF)** Radiometric Normalization before computing vegetation indices:
+
+```python
+def normalize_radiometry(progress_rgb: np.ndarray, baseline_rgb: np.ndarray) -> np.ndarray:
+    """
+    Normalizes solar irradiance and Rayleigh atmospheric scattering of the progress image
+    against the baseline image using cumulative histogram matching across color channels.
+    """
+    matched = np.zeros_like(progress_rgb)
+    for c in range(3):
+        # Quantile histogram transfer per channel
+        hist_base, _ = np.histogram(baseline_rgb[:, :, c].flatten(), 256, [0, 256])
+        hist_prog, _ = np.histogram(progress_rgb[:, :, c].flatten(), 256, [0, 256])
+        
+        cdf_base = hist_base.cumsum() / hist_base.sum()
+        cdf_prog = hist_prog.cumsum() / hist_prog.sum()
+        
+        lut = np.interp(cdf_prog, cdf_base, np.arange(256)).astype(np.uint8)
+        matched[:, :, c] = cv2.LUT(progress_rgb[:, :, c], lut)
+        
+    return matched
+```
+
+### 3.2 Shadow-Invariant Green Leaf Index (GLI) & Otsu Adaptive Thresholding
+To prevent cloud shadows from falsely depressing vegetation detection, VERITAS uses the **Green Leaf Index (GLI)**:
+$$\text{GLI} = \frac{2G - R - B}{2G + R + B}$$
+Unlike raw ExG with a fixed threshold, GLI isolates chromatic foliage signals from luminance drops. Otsu's bimodal thresholding dynamically extracts the true canopy boundary:
+
+```python
+def compute_canopy_metrics(
+    img_before_rgb: np.ndarray, 
+    img_warped_progress_rgb: np.ndarray
+) -> dict:
+    """
+    Computes biological canopy area delta with radiometric normalization and shadow-invariant GLI.
+    """
+    # 1. Radiometric normalization
+    normalized_progress = normalize_radiometry(img_warped_progress_rgb, img_before_rgb)
+
+    def extract_vegetation_mask(img_rgb: np.ndarray) -> np.ndarray:
+        img_f = img_rgb.astype(np.float32)
+        R, G, B = img_f[:, :, 0], img_f[:, :, 1], img_f[:, :, 2]
+        
+        numerator = 2.0 * G - R - B
+        denominator = 2.0 * G + R + B + 1e-7
+        gli = np.clip(numerator / denominator, -1.0, 1.0)
+        
+        # Scale to 0-255 uint8 for Otsu adaptive thresholding
+        gli_uint8 = ((gli + 1.0) * 127.5).astype(np.uint8)
+        
+        # Otsu's automated thresholding separates foliage from soil/shadows
+        _, mask_otsu = cv2.threshold(gli_uint8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Morphological noise removal
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask_cleaned = cv2.morphologyEx(mask_otsu, cv2.MORPH_OPEN, kernel)
+        mask_cleaned = cv2.morphologyEx(mask_cleaned, cv2.MORPH_CLOSE, kernel)
+        return mask_cleaned
+
+    mask1 = extract_vegetation_mask(img_before_rgb)
+    mask2 = extract_vegetation_mask(normalized_progress)
+
+    # Valid overlap mask (ignoring black warped borders)
+    valid_region = (img_warped_progress_rgb.sum(axis=2) > 10).astype(np.uint8)
+    mask1 = cv2.bitwise_and(mask1, mask1, mask=valid_region)
+    mask2 = cv2.bitwise_and(mask2, mask2, mask=valid_region)
+
+    pixels1 = int(np.count_nonzero(mask1))
+    pixels2 = int(np.count_nonzero(mask2))
+
+    delta_pct = ((pixels2 - pixels1) / max(pixels1, 1)) * 100.0
+
+    return {
+        "baseline_canopy_pixels": pixels1,
+        "progress_canopy_pixels": pixels2,
+        "net_canopy_growth_pct": round(delta_pct, 2),
+        "valid_surface_area_pixels": int(np.count_nonzero(valid_region)),
+        "radiometric_normalized": True,
+        "index_used": "GLI_OTSU"
+    }
+```
+
+---
+
+## 4. Algorithmic Module 4: Segment Anything Model (SAM) Instance Segmentation
+
+Integrating Meta AI's **Segment Anything Model (SAM)** (loaded via the `segment-anything` skill) for zero-shot individual sapling segmentation in field drone frames:
+
+```python
+import numpy as np
+import torch
+from segment_anything import sam_model_registry, SamPredictor
+
+class SamCanopySegmentor:
+    def __init__(self, checkpoint_path: str = "sam_vit_b_01ec64.pth", model_type: str = "vit_b"):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.sam = sam_model_registry[model_type](checkpoint=checkpoint_path)
+        self.sam.to(device=self.device)
+        self.predictor = SamPredictor(self.sam)
+
+    def segment_canopy_instances(self, image_rgb: np.ndarray, seed_points: np.ndarray) -> dict:
+        """
+        Segments individual tree crowns given prompt seed points.
+        seed_points: Array of shape (N, 2) containing [x, y] coordinates
+        """
+        self.predictor.set_image(image_rgb)
+        
+        input_labels = np.ones(len(seed_points), dtype=np.int32) # 1 = foreground
+        masks, scores, _ = self.predictor.predict(
+            point_coords=seed_points,
+            point_labels=input_labels,
+            multimask_output=False
+        )
+        
+        individual_crown_areas = [int(np.count_nonzero(masks[i])) for i in range(len(masks))]
+        
+        return {
+            "instance_count": len(individual_crown_areas),
+            "crown_pixel_areas": individual_crown_areas,
+            "mean_crown_area": float(np.mean(individual_crown_areas)) if individual_crown_areas else 0.0,
+            "mean_confidence_score": float(np.mean(scores)) if len(scores) else 0.0
+        }
+```
+
+---
+
+## 5. Algorithmic Module 5: Above-Ground Biomass Allometric Science
+
+> **CORRECTION (v1.2.0) — the constant was wrong by 8.72×.**
+>
+> The original implementation used a prefactor of `0.0673` and was described as
+> implementing "peer-reviewed Chave et al. pantropical ARR allometric
+> equations." It did not. The Chave et al. (2014) pantropical regression is
+>
+> $$\ln(\text{AGB}) = \beta_0 + \beta_1 \ln(\rho D^2 H), \quad \beta_0 = -0.533,\ \beta_1 = 0.976$$
+>
+> so the correct prefactor is $e^{-0.533} \approx \mathbf{0.5868}$, not
+> $0.0673$. The documented value under-reports above-ground biomass — and
+> therefore carbon — by a factor of **8.72**.
+>
+> Worked example (100 m² canopy, 4 m height, ρ = 0.58 g/cm³):
+> original code returns **0.1005 tCO₂e**; Chave et al. returns **0.8762 tCO₂e**.
+>
+> This is a commercial defect, not an academic one. `05-API-SPEC.md` §1.4
+> advertises `+6.84 tCO₂e/ha` in the audit dossier. Had that figure been derived
+> from the broken constant, the platform would have systematically
+> under-credited every project it certifies — a dispute waiting to happen with a
+> Verra validator.
+>
+> **Authoritative implementation:** `backend/services/biomass_service.py`
+> (`CHAVE_PREFACTOR = math.exp(-0.533)`, regression-tested against the published
+> equation in `tests/test_physics.py::TestAllometricCarbon`).
+
+### 5.0 Remaining Caveat — Stated, Not Hidden
+
+The relation `DBH = 2.1 · √(canopy_area_m²)` is a **crude crown-projection
+proxy**, not a dendrometer measurement at 1.3 m breast height. It is adequate
+for demonstrating the accounting chain; it is **not** a substitute for a real
+field survey.
+
+`calculate_allometric_carbon()` therefore accepts an optional `measured_dbh_cm`.
+When supplied, the proxy is bypassed entirely. Every emitted record carries a
+`dbh_source` field (`field_measured_dbh_1.3m` or
+`crown_projection_proxy_2.1*sqrt(area_m2)`) so the audit dossier can never
+present a crown-area estimate as a survey measurement.
+
+### 5.1 Equation Chain
+
+```python
+import math
+
+# Chave et al. (2014) pantropical coefficients. b0 = -0.533 is the
+# CORRECT intercept; the previously documented 0.0673 prefactor was
+# mathematically unrelated to this regression.
+CHAVE_B0 = -0.533
+CHAVE_B1 = 0.976
+CHAVE_PREFACTOR = math.exp(CHAVE_B0)          # ~= 0.5868
+
+CARBON_FRACTION = 0.47                        # IPCC tropical woody biomass
+CO2_PER_CARBON = 44.0 / 12.0                  # = 3.667
+
+
+def calculate_allometric_carbon(
+    canopy_area_m2: float,
+    mean_height_m: float,
+    wood_density_g_cm3: float = 0.58,          # Default pantropical Acacia
+    species_name: str = "Acacia tortilis",
+    measured_dbh_cm: float | None = None,
+    stand_area_ha: float | None = None,
+    stems_per_hectare: int | None = None,
+) -> dict:
+    """Metric tonnes CO2e for one stem (or per hectare if a stand density
+    is supplied). See backend/services/biomass_service.py for the full type."""
+    if measured_dbh_cm is not None:
+        dbh_cm, dbh_source = float(measured_dbh_cm), "field_measured_dbh_1.3m"
+    else:
+        dbh_cm = 2.1 * math.sqrt(max(canopy_area_m2, 0.0))
+        dbh_source = "crown_projection_proxy_2.1*sqrt(area_m2)"
+
+    # AGB[kg] = exp(b0) * (rho[g/cm^3] * DBH[cm]^2 * H[m])^b1
+    agb_kg = CHAVE_PREFACTOR * ((wood_density_g_cm3 * dbh_cm**2 * mean_height_m) ** CHAVE_B1)
+    carbon_kg = agb_kg * CARBON_FRACTION
+    co2e_metric_tons = carbon_kg * CO2_PER_CARBON / 1000.0
+
+    if stand_area_ha is not None and stems_per_hectare is not None:
+        co2e_metric_tons *= stems_per_hectare * stand_area_ha
+
+    return {
+        "species": species_name,
+        "wood_density": wood_density_g_cm3,
+        "dbh_source": dbh_source,
+        "estimated_dbh_cm": round(dbh_cm, 2),
+        "mean_height_m": round(mean_height_m, 2),
+        "agb_kg": round(agb_kg, 2),
+        "carbon_kg": round(carbon_kg, 2),
+        "co2e_metric_tons": round(co2e_metric_tons, 4),
+        "equation": "Chave et al. (2014) pantropical AGB: ln(AGB) = -0.533 + 0.976*ln(rho*DBH^2*H)",
+    }
+```
+
+### 5.2 Verra VM0047 Statistical Uncertainty Deduction
+Under Verra ARR Methodology VM0047 Section 8.4, carbon estimates must calculate sampling error at the 90% confidence interval. If sampling error exceeds 15%, a mandatory discount is penalized directly:
+
+$$E_{\text{sampling}} = \left(\frac{t_{0.90, n-1} \cdot s}{\sqrt{n} \cdot \bar{x}}\right) \times 100\%$$
+
+$$\text{Discount Rate} = \max\left(0.0, \frac{E_{\text{sampling}} - 15\%}{100\%}\right)$$
+
+$$\text{Net Certified }\text{tCO}_2\text{e} = \text{Gross }\text{tCO}_2\text{e} \times (1 - \text{Discount Rate})$$
+
+```python
+def apply_vm0047_uncertainty_discount(gross_tco2e: float, sampling_error_pct: float) -> dict:
+    discount_rate = max(0.0, (sampling_error_pct - 15.0) / 100.0)
+    net_tco2e = gross_tco2e * (1.0 - discount_rate)
+    return {
+        "gross_tco2e": round(gross_tco2e, 4),
+        "sampling_error_pct": round(sampling_error_pct, 2),
+        "discount_applied_pct": round(discount_rate * 100.0, 2),
+        "net_certified_tco2e": round(net_tco2e, 4),
+        "compliance_status": "VM0047_CONSERVATIVE_CERTIFIED"
+    }
+```
+
+---
+
+## 6. Algorithmic Module 6: Synthetic Media & Deepfake Foliage Detection
+
+To prevent dishonest developers from submitting photorealistic AI-generated reforestation imagery (e.g., Midjourney v6, Flux, Stable Diffusion), the platform runs a frequency-domain residual analysis:
+
+```python
+def detect_synthetic_ai_artifacts(img_rgb: np.ndarray) -> dict:
+    """
+    Analyzes high-frequency noise residuals and Fourier spectrum to detect 
+    generative diffusion model artifacts in outdoor environmental photos.
+    """
+    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    
+    # 1. High-frequency Laplacian variance (diffusion models show smoothed micro-noise)
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    
+    # 2. 2D Fast Fourier Transform (FFT) for grid checkerboard artifacts
+    f = np.fft.fft2(gray)
+    fshift = np.fft.fftshift(f)
+    magnitude_spectrum = 20 * np.log(np.abs(fshift) + 1e-7)
+    
+    # Peak-to-average ratio in high frequencies
+    h, w = gray.shape
+    center_y, center_x = h // 2, w // 2
+    high_freq_region = magnitude_spectrum.copy()
+    high_freq_region[center_y-20:center_y+20, center_x-20:center_x+20] = 0
+    fft_peak_ratio = float(np.max(high_freq_region) / (np.mean(high_freq_region) + 1e-7))
+    
+    # 3. Screen-Replay & Moiré Subpixel Interference Detection (Anti-iPad/Monitor Fraud)
+    # Rephotographed screens exhibit periodic spatial beat frequencies (Moiré) and RGB color-filter grid harmonics
+    gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+    gradient_magnitude = np.sqrt(gx**2 + gy**2)
+    moire_energy_ratio = float(np.std(gradient_magnitude) / (np.mean(gradient_magnitude) + 1e-7))
+
+    # Heuristic multi-modal scoring
+    is_screen_replay = moire_energy_ratio > 4.2
+    is_suspicious_ai = laplacian_var < 80.0 or fft_peak_ratio > 3.8 or is_screen_replay
+    confidence = 0.96 if is_suspicious_ai else 0.99
+
+    verdict_action = "NATURAL_SENSOR_CONFIRMED"
+    if is_screen_replay:
+        verdict_action = "QUARANTINE_SCREEN_REPLAY_MOIRE"
+    elif is_suspicious_ai:
+        verdict_action = "QUARANTINE_SYNTHETIC"
+
+    return {
+        "is_synthetic_ai_flagged": is_suspicious_ai,
+        "is_screen_replay_detected": is_screen_replay,
+        "laplacian_noise_variance": round(laplacian_var, 2),
+        "fft_frequency_peak_ratio": round(fft_peak_ratio, 2),
+        "moire_subpixel_energy_ratio": round(moire_energy_ratio, 2),
+        "confidence_score": confidence,
+        "action": verdict_action
+    }
+```
+
+---
+
+## 7. Algorithmic Module 7: EUDR Article 9 Spatial Polygon & Cadastral Compliance
+
+Article 9 of the **EU Deforestation Regulation (EUDR)** mandates that forestry/agricultural plots larger than 4 hectares must be demarcated as closed polygons (not single points) with coordinate vertices defined to at least **6 decimal places** (~11.1 cm spatial resolution at the equator) without topological self-intersections.
+
+```python
+from shapely.geometry import shape, Polygon
+import pyproj
+from shapely.ops import transform
+from typing import Dict, Any
+
+def validate_eudr_spatial_compliance(geojson_feature: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Validates parcel boundary geometry against EUDR Article 9 statutory requirements:
+    1. Plots > 4.0 ha require Polygon/MultiPolygon geometry with >= 6 decimal places.
+    2. Topological sanity: no self-intersections (poly.is_valid).
+    3. Strict EPSG:6933 equal-area metric projection for surface calculation.
+    """
+    geometry = geojson_feature.get("geometry", {})
+    geom_type = geometry.get("type")
+    
+    if geom_type not in ["Polygon", "MultiPolygon", "Point"]:
+        return {"status": "INVALID_GEOMETRY", "is_compliant": False, "reason": "Unsupported GeoJSON type"}
+
+    # Project coordinates to Equal-Area projection (EPSG:6933) for accurate surface area
+    poly = shape(geometry)
+    if not poly.is_valid:
+        return {"status": "TOPOLOGY_ERROR", "is_compliant": False, "reason": "Self-intersecting polygon boundary"}
+
+    # Equal area transformation
+    wgs84 = pyproj.CRS("EPSG:4326")
+    equal_area = pyproj.CRS("EPSG:6933")
+    projector = pyproj.Transformer.from_crs(wgs84, equal_area, always_xy=True).transform
+    projected_geom = transform(projector, poly)
+    
+    area_sq_meters = projected_geom.area
+    hectares = area_sq_meters / 10000.0
+
+    # EUDR Article 9 Clause: > 4.0 ha must be a polygon with 6 decimal places
+    if hectares > 4.0:
+        if geom_type == "Point":
+            return {
+                "status": "NON_COMPLIANT_EUDR_ART9",
+                "is_compliant": False,
+                "reason": "EUDR Article 9 requires polygon boundary for plots > 4.0 hectares (point provided)"
+            }
+            
+        # Verify 6-decimal-place coordinate precision
+        coords = list(poly.exterior.coords) if geom_type == "Polygon" else [pt for p in poly.geoms for pt in p.exterior.coords]
+        imprecise_vertices = []
+        for lon, lat in coords:
+            lon_decimals = len(str(lon).split(".")[1]) if "." in str(lon) else 0
+            lat_decimals = len(str(lat).split(".")[1]) if "." in str(lat) else 0
+            if lon_decimals < 6 or lat_decimals < 6:
+                imprecise_vertices.append((lon, lat))
+                
+        if len(imprecise_vertices) > 0:
+            return {
+                "status": "NON_COMPLIANT_EUDR_PRECISION",
+                "is_compliant": False,
+                "area_hectares": round(hectares, 3),
+                "reason": f"EUDR requires 6-decimal precision (~11cm). Found {len(imprecise_vertices)} vertices with <6 decimals."
+            }
+
+    return {
+        "status": "EUDR_ARTICLE_9_COMPLIANT",
+        "is_compliant": True,
+        "area_hectares": round(hectares, 3),
+        "polygon_vertex_count": len(coords) if geom_type != "Point" else 1,
+        "coordinate_crs": "EPSG:4326",
+        "cadastral_check": "VERIFIED_VALID"
+    }
+```
+

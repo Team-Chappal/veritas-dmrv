@@ -1,0 +1,39 @@
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Next.js ---------------------------------------------------------
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# --- Secrets ----------------------------------------------------------------
+.env
+.env.local
+.env*.local
+!.env.example
+
+# --- macOS / FAT32 (the project lives on an exFAT-formatted USB volume) ------
+.DS_Store
+._*
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# --- Local artefacts ---------------------------------------------------------
+*.log
+.veritas/
+fixtures/generated/

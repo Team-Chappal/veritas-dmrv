@@ -1,0 +1,93 @@
+name: VERITAS dMRV CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# The fixture-freshness gate is separate and runs FIRST: if the committed solar
+# fixtures are stale, the physics tests are validating against numbers nobody
+# has checked, and a green run would be meaningless.
+jobs:
+  fixtures-fresh:
+    name: Solar fixtures are pvlib-generated and current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install physics deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pvlib==0.11.1 pandas numpy pytest
+      - name: Verify committed fixtures match a fresh pvlib run
+        run: python scripts/gen_solar_fixtures.py --check
+
+  backend-tests:
+    name: Backend suite (85% coverage gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install system deps for OpenCV headless
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pytest-cov freezegun
+      - name: Run suite with coverage
+        run: pytest backend/tests -v --cov=backend --cov-report=xml --cov-fail-under=85
+
+  no-network-in-tests:
+    name: Tests pass with Cloudinary credentials absent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+          pip install -r backend/requirements.txt
+      - name: Run with all CLOUDINARY_* explicitly unset
+        env:
+          CLOUDINARY_CLOUD_NAME: ""
+          CLOUDINARY_API_KEY: ""
+          CLOUDINARY_API_SECRET: ""
+        run: |
+          pytest backend/tests -q
+          python -c "
+          from core.config import get_settings
+          s = get_settings()
+          assert not s.has_cloudinary_credentials, 'credentials leaked into CI'
+          assert s.mode == 'fixture'
+          print('fixture-mode degradation OK:', s.public_summary())
+          "
+
+  frontend-build:
+    name: Next.js production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package.json
+      - name: Install dependencies
+        run: npm --prefix frontend ci
+      - name: Build
+        run: npm --prefix frontend run build
+      - name: Typecheck
+        run: npm --prefix frontend run typecheck
