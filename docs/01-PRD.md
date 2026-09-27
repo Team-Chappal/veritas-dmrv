@@ -24,7 +24,7 @@ Concurrently, legal frameworks have transitioned from voluntary public relations
 4. **Audit Impossibility:** Third-party auditors (VVBs) take 6 to 18 months to manually sample sites, creating a massive, expensive administrative bottleneck.
 
 ### 1.3 The Solution Thesis
-**VERITAS dMRV** is an enterprise-grade visual ground-truth intelligence platform. It ingests raw field media, uses **JEV (TypeSafe AI)** for sub-150ms anti-fraud triage, applies **OpenCV SIFT homography** to normalize shifting camera perspectives, extracts biological canopy metrics via the **Excess Green Index (ExG)**, and leverages **Cloudinary** as an on-demand visual compute engine, structured metadata catalog, and C2PA cryptographic trust authority.
+**VERITAS dMRV** is an enterprise-grade visual ground-truth intelligence platform. It ingests raw field media, uses **JEV (TypeSafe AI)** for sub-150ms anti-fraud triage, applies **OpenCV SIFT homography** to normalize shifting camera perspectives, extracts biological canopy metrics via the **shadow-invariant Green Leaf Index (GLI) with Otsu thresholding**, and leverages **Cloudinary** as an on-demand visual compute engine, structured metadata catalog, and C2PA cryptographic trust authority.
 
 ---
 

@@ -11,7 +11,7 @@
 ### 1.1 Ultimate Goal
 Deliver an end-to-end, production-grade deployment of **VERITAS dMRV** for Code Cubicle 6.0:
 1. Field media upload with automated solar ephemeris and JEV RLCD triage ($<150\text{ms}$).
-2. OpenCV SIFT + MAGSAC++ homography alignment and ExG canopy growth extraction.
+2. OpenCV SIFT + MAGSAC++ homography alignment and GLI canopy growth extraction.
 3. Cloudinary dynamic split-screen URL rendering and C2PA Content Credentials.
 4. Interactive video player with clickable drone telemetry hotspots.
 5. Single-click statutory EUDR/CSRD compliance audit dossier export.
@@ -107,11 +107,12 @@ gantt
 * **Deliverable:** Service (`services/homography_service.py`) outputting warped $T_2$ and inlier ratio.
 * **Done Criteria:** Rotated/tilted test photo registers with inlier ratio $> 70\%$ in $< 800\text{ms}$.
 
-#### Task 2.3: Excess Green Index (ExG) & JEV RLCD Decision Engine
+#### Task 2.3: Shadow-Invariant Green Leaf Index (GLI) + Otsu, & JEV RLCD Decision Engine
 * **Estimated Time:** 4 Hours
 * **Inputs:** Aligned image pair, SIFT inlier ratio, solar error.
 * **Deliverable:** Service (`services/jev_service.py`) calculating biological canopy area change ($\Delta C$) and emitting typed JEV decision.
 * **Done Criteria:** Outputs calibrated Brier confidence score ($0.96$) and canopy delta percentage.
+* **Note:** originally specified as raw ExG with a fixed threshold; corrected to GLI + Otsu. See `01-PRD` FR-2.4.
 
 ---
 
