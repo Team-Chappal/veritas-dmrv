@@ -578,6 +578,15 @@ def validate_eudr_spatial_compliance(geojson_feature: Dict[str, Any]) -> Dict[st
     if geom_type not in ["Polygon", "MultiPolygon", "Point"]:
         return {"status": "INVALID_GEOMETRY", "is_compliant": False, "reason": "Unsupported GeoJSON type"}
 
+    # PRECISION NOTE: EUDR Article 9 requires >= 6 decimal places. A JSON
+    # *number* cannot express this, because JSON has one numeric type:
+    # 39.855420 parses to the float 39.85542 and the declared precision is lost
+    # before any validator can count it. Vertices must therefore be transported
+    # as decimal STRINGS (or the raw survey text retained alongside), and the
+    # validator below must count decimals on the string form when present.
+    # Counting decimals on a parsed float would make the 6-decimal rule
+    # permanently unsatisfiable and silently meaningless.
+
     # Project coordinates to Equal-Area projection (EPSG:6933) for accurate surface area
     poly = shape(geometry)
     if not poly.is_valid:

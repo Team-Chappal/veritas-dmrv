@@ -230,8 +230,8 @@ To enable instant seeding and offline development, the repository stores canonic
       "target_hectares": 14.5,
       "cadastral_polygon": [
         [39.851234, -3.631245],
-        [39.855420, -3.631245],
-        [39.855420, -3.636120],
+        [39.85542, -3.631245],
+        [39.85542, -3.63612],
         [39.851234, -3.636120],
         [39.851234, -3.631245]
       ],

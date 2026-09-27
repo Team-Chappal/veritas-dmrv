@@ -361,13 +361,27 @@ def audit_dossier(project_id: str) -> dict:
         "mode": "MOCK",
         "cadastral_polygon_geojson": {
             "type": "Polygon",
+            # Vertices are decimal STRINGS, not JSON numbers.
+            #
+            # EUDR Article 9 requires coordinate vertices at >= 6 decimal
+            # places (~11.1 cm). A JSON *number* cannot express that: JSON has
+            # one numeric type, so 39.855420 parses to the float 39.85542 and
+            # the declared precision is lost before any validator can count it.
+            # A compliance submission that sends bare numbers therefore cannot
+            # prove its own precision.
+            #
+            # Emitting vertices as strings preserves the survey's declared
+            # precision through the wire. The EUDR validator must accept both
+            # forms and validate the string form when present.
+            "coordinate_encoding": "decimal_string",
+            "coordinate_precision_declared": 6,
             "coordinates": [
                 [
-                    [39.851234, -3.631245],
-                    [39.855420, -3.631245],
-                    [39.855420, -3.636120],
-                    [39.851234, -3.636120],
-                    [39.851234, -3.631245],
+                    ["39.851234", "-3.631245"],
+                    ["39.855420", "-3.631245"],
+                    ["39.855420", "-3.636120"],
+                    ["39.851234", "-3.636120"],
+                    ["39.851234", "-3.631245"],
                 ]
             ],
         },
