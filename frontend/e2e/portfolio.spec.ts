@@ -57,14 +57,21 @@ test.describe("PortfolioGrid", () => {
     await expect(chip.locator(".sr-only")).toHaveText("assets");
   });
 
-  test("filtering narrows the grid", async ({ page }) => {
+  test("filtering narrows the grid to exactly what the chip promised", async ({ page }) => {
     const before = await page.getByTestId("asset-card").count();
 
-    await page.getByTestId("filter-decision-QUARANTINE_FRAUD").click();
-    await expect(page.getByTestId("portfolio-count")).toContainText(/of \d+ assets/);
+    const chip = page.getByTestId("filter-decision-QUARANTINE_FRAUD");
+    const promised = Number(await chip.locator(".tabular-nums").innerText());
+    await chip.click();
+
+    // Polled, not immediate: the previous version of this assertion passed on
+    // `0 < before`, which a race between the click and the refetch also
+    // produces. An empty grid is not "narrowed".
     await expect
       .poll(async () => page.getByTestId("asset-card").count())
-      .toBeLessThan(before);
+      .toBe(promised);
+    expect(promised).toBeLessThan(before);
+    expect(promised).toBeGreaterThan(0);
 
     // Every remaining card actually matches the filter.
     const decisions = await page
@@ -103,6 +110,59 @@ test.describe("PortfolioGrid", () => {
         })
       )
       .toBe(false);
+  });
+
+  test("applying a filter does not make the other chips disappear", async ({ page }) => {
+    // THE TRAP. Counting the `decision` facet with the `decision` filter applied
+    // collapses it to the single selected value, so the other chips vanish and
+    // the reviewer cannot switch straight from "quarantined" to "review" — only
+    // clear the filter first. Each axis must be counted with its OWN filter
+    // lifted, which is standard faceted-search behaviour.
+    const before = await page.locator('[data-testid^="filter-decision-"]').count();
+    expect(before).toBeGreaterThan(1);
+
+    await page.getByTestId("filter-decision-QUARANTINE_FRAUD").click();
+    await expect(page.locator('[data-testid^="filter-decision-"]')).toHaveCount(before);
+
+    // And the counts must still answer "how many would I get if I chose this?",
+    // so they must not all read the same.
+    const counts = await page
+      .locator('[data-testid^="filter-decision-"] .tabular-nums')
+      .allInnerTexts();
+    expect(new Set(counts).size).toBeGreaterThan(1);
+  });
+
+  test("a filter axis reflects the OTHER filters", async ({ page }) => {
+    await page.getByTestId("filter-decision-QUARANTINE_FRAUD").click();
+    // Wait for the refetch before reading, or this reads the previous render.
+    await expect(page.getByTestId("asset-card").first()).toBeVisible();
+    await expect
+      .poll(async () => page.getByTestId("asset-card").count())
+      .toBeGreaterThan(0);
+
+    // Every card is quarantined...
+    //
+    // The browser must return an ARRAY, not a Set. Playwright serialises the
+    // result of evaluateAll, and a Set comes back as `{}` -- so asserting on a
+    // Set returned from the page always fails, and fails in a way that looks
+    // like "no cards matched" rather than "wrong assertion".
+    const decisions = await page
+      .getByTestId("asset-card")
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-decision")));
+    expect(decisions.length).toBeGreaterThan(0);
+    expect(new Set(decisions)).toEqual(new Set(["QUARANTINE_FRAUD"]));
+
+    // ...and the c2pa chips are counted WITHIN that set, so their total is the
+    // number of quarantined assets, not the size of the whole corpus.
+    const c2paCounts = (
+      await page.locator('[data-testid^="filter-c2pa-"] .tabular-nums').allInnerTexts()
+    ).map((t) => Number(t));
+    expect(c2paCounts.reduce((a, b) => a + b, 0)).toBe(
+      await page.locator('[data-testid="filter-decision-QUARANTINE_FRAUD"] .tabular-nums')
+        .first()
+        .innerText()
+        .then(Number)
+    );
   });
 
   test("cards state both a verdict and a provenance state in words", async ({ page }) => {
