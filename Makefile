@@ -10,8 +10,11 @@ PYTEST:= backend/.venv/bin/pytest
 export PYTHONPATH := backend
 
 .DEFAULT_GOAL := help
+NPM  := npm --prefix frontend
+
 .PHONY: help bootstrap dev dev-mock test test-tier1 test-tier2 lint \
-        fixtures fixtures-check seed clean docker sync-usb verify bench
+        fixtures fixtures-check seed clean docker sync-usb verify bench \
+        fe-install fe-build fe-e2e build e2e
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -86,6 +89,31 @@ bench: ## Measure latency and regenerate docs/LATENCY-BASELINE.md
 	$(PY) scripts/benchmark_latency.py --repeats 12 --sweep --write
 
 verify: fixtures-check test ## Full pre-commit gate
+
+# --------------------------------------------------------------------------- #
+# Frontend (Stage 6)
+# --------------------------------------------------------------------------- #
+
+# `npm ci`, not `npm install`, now that package-lock.json is committed. `install`
+# silently updates the lockfile, which is how a build ends up depending on
+# packages nobody pinned.
+fe-install: ## Install pinned frontend deps (npm ci)
+	$(NPM) ci --no-audit --no-fund
+
+fe-build: fe-install ## Production build + typecheck
+	$(NPM) run build
+	$(NPM) run typecheck
+
+# The name the S6 exit criteria already use. It is here so the criteria are
+# runnable as written rather than aspirational.
+build: fe-build ## Alias of fe-build, named in the S6 exit criteria
+
+e2e: ## Playwright e2e against a PRODUCTION build, backend not required
+	$(NPM) run build
+	$(NPM) run typecheck
+	$(NPM) run e2e
+
+fe-e2e: e2e ## Alias
 
 # --------------------------------------------------------------------------- #
 # Docker

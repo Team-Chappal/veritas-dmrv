@@ -54,6 +54,9 @@ rather than quietly fixing it.
 - Develop on the local APFS repo, not the USB volume at `/Volumes/VENTOY` — it
   is FAT32, case-insensitive and slow, and tests crawl there. `make sync-usb`
   mirrors when the volume is mounted.
+- Frontend: `make fe-build` (npm ci + production build + typecheck) and
+  `make e2e` (Playwright against a production build, backend not required).
+  `frontend/package-lock.json` is committed, so `npm ci` is what runs.
 
 ## 4. Known open item
 
