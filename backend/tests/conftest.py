@@ -357,3 +357,37 @@ def token_for() -> Callable[[str], dict]:
         return {"Authorization": f"Bearer {token}"}
 
     return _make
+
+
+# --------------------------------------------------------------------------- #
+# Determinism (CV RNG)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(autouse=True)
+def deterministic_cv_rng():
+    """Reset OpenCV's global RNG before every test.
+
+    Registration runs RANSAC/MAGSAC++, which draws from OpenCV's PROCESS-GLOBAL
+    RNG. That made any CV test whose expected outcome sat near a decision
+    boundary depend on how many OpenCV calls preceded it: adding an unrelated
+    test file earlier in the alphabet flipped
+    ``test_handles_differing_input_sizes`` from aligned to a TPS fallback, with
+    no change to the code under test.
+
+    Discovered by adding the QR report tests, which run OpenCV's QR detector —
+    the defect was latent in the vision suite and only became visible once
+    anything else touched that RNG. Order-independent tests are worth more than
+    the marginal speed of not reseeding.
+
+    Seeded per test rather than once per session: a single session-level seed
+    would leave within-session order dependence intact.
+    """
+    try:
+        import cv2
+    except ImportError:  # pragma: no cover - OpenCV is a hard dep
+        yield
+        return
+
+    cv2.setRNGSeed(0)
+    yield
