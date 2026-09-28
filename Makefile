@@ -11,7 +11,7 @@ export PYTHONPATH := backend
 
 .DEFAULT_GOAL := help
 .PHONY: help bootstrap dev dev-mock test test-tier1 test-tier2 lint \
-        fixtures fixtures-check seed clean docker sync-usb verify
+        fixtures fixtures-check seed clean docker sync-usb verify bench
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -81,6 +81,9 @@ seed: ## Seed the demo corpus (requires Cloudinary creds; no-ops otherwise)
 	else \
 		npm --prefix frontend exec -- tsx ../../scripts/seed_demo_fixtures.ts; \
 	fi
+
+bench: ## Measure latency and regenerate docs/LATENCY-BASELINE.md
+	$(PY) scripts/benchmark_latency.py --repeats 12 --sweep --write
 
 verify: fixtures-check test ## Full pre-commit gate
 

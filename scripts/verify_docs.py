@@ -35,7 +35,7 @@ DOCS = REPO / "docs"
 #: The consolidated brief is a derived analysis document that quotes the
 #: original defects verbatim in order to document them. Linting it produces
 #: only false positives, so it is excluded.
-EXCLUDE = {"VERITAS-CONSOLIDATED-BRIEF.md"}
+EXCLUDE = {"VERITAS-CONSOLIDATED-BRIEF.md", "LATENCY-BASELINE.md", "latency-baseline.json"}
 
 
 @dataclass
@@ -127,12 +127,18 @@ RULES: list = [
     ),
     Rule(
         "LATENCY-001",
-        "An unbounded latency claim without the hardware or resolution it was "
-        "measured on. '< 150 ms' and '< 800 ms' are only meaningful with a stated "
-        "baseline.",
-        r"<\s*150\s*\\?text\{ ms\}|< 150ms|<\s*800\s*\\?text\{ ms\}",
+        "A latency claim with no measured baseline behind it. '< 150 ms' and "
+        "'< 800 ms' appear throughout the suite with no hardware, no "
+        "resolution and no method. scripts/benchmark_latency.py now produces "
+        "docs/LATENCY-BASELINE.md, so any latency assertion must cite a "
+        "measured run rather than assert a number.",
+        r"[<>]\s*(150|800)\s*\\?\{?\s*(ms|milliseconds)",
         scope=(),
-        allow_context=("target", "Target", "measured", "baseline", "NFR-"),
+        allow_context=(
+            "LATENCY-BASELINE", "measured", "MEASURED", "baseline", "Baseline",
+            "target", "Target", "NFR-1", "CORRECTION", "not baselined",
+            "unbaselined", "measured on this machine", "docs/LATENCY",
+        ),
         severity="WARN",
     ),
 ]

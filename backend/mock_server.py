@@ -69,11 +69,18 @@ except Exception:  # pragma: no cover - pvlib missing
     ShadowVerdict = None  # type: ignore[assignment]
 
 try:
+    import cv2
+    import numpy as np
+
+    from services.canopy_service import compute_canopy_metrics
     from services.forgery_service import detect_synthetic_media, ForgeryAction
+    from services.homography_service import register_field_pair
 
     FORGERY_AVAILABLE = True
+    CV_AVAILABLE = True
 except Exception:  # pragma: no cover - opencv missing
     FORGERY_AVAILABLE = False
+    CV_AVAILABLE = False
     ForgeryAction = None  # type: ignore[assignment]
 
 
@@ -139,8 +146,12 @@ def health() -> dict:
         "capabilities": {
             "solar_ephemeris": SOLAR_AVAILABLE,
             "forgery_detection": FORGERY_AVAILABLE,
-            "photogrammetry": False,
-            "note": "Photogrammetry is stubbed; see align_and_diff.",
+            "photogrammetry": CV_AVAILABLE,
+            "canopy_quantification": CV_AVAILABLE,
+            "note": (
+                "Photogrammetry and canopy quantification run for real when "
+                "OpenCV is installed. Set VERITAS_STUB_CV=1 for canned values."
+            ),
         },
     }
 
@@ -287,27 +298,92 @@ async def align_and_diff(
     progress_image: UploadFile = File(...),
     project_id: str = Form("KEN-042"),
 ) -> dict:
-    """STUB. Returns the canonical values from docs/05-API-SPEC.md §1.3.
+    """Register the pair and measure canopy change.
 
-    Deliberately deterministic: the frontend needs stable numbers to build
-    against, and the real SIFT pipeline is the CV track's deliverable.
+    This is a REAL computation, not a stub. It was stubbed in the original
+    design because the CV track had not been built; S2 replaced it with
+    ``services.homography_service`` and ``services.canopy_service``.
+
+    The response therefore carries live SIFT counts, a live inlier ratio and a
+    live canopy delta. ``X-Stub-CV: true`` forces the historical canned values
+    for frontend work that wants a stable payload.
     """
     for f in (baseline_image, progress_image):
         if not f or not f.filename:
             raise HTTPException(status_code=422, detail="Both image files are required.")
 
+    if os.getenv("VERITAS_STUB_CV", "").lower() in {"1", "true", "yes"}:
+        return _stub_cv_response()
+
+    base_bytes = await baseline_image.read()
+    prog_bytes = await progress_image.read()
+    if not base_bytes or not prog_bytes:
+        raise HTTPException(status_code=422, detail="Both image files must be non-empty.")
+
+    try:
+        base_img = _decode_rgb(base_bytes)
+        prog_img = _decode_rgb(prog_bytes)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    registration = register_field_pair(base_img, prog_img)
+
+    if not registration.status.succeeded:
+        return {
+            "status": "REGISTRATION_FAILED",
+            "mode": "MOCK_WITH_LIVE_CV",
+            "project_id": project_id,
+            "homography_metrics": registration.to_dict(),
+            "biological_canopy_delta": {
+                "net_canopy_growth_pct": None,
+                "note": (
+                    "No canopy delta: registration did not succeed. Reporting a "
+                    "change figure without a valid registration would fabricate "
+                    "evidence."
+                ),
+            },
+        }
+
+    canopy = compute_canopy_metrics(base_img, registration.warped_image)
+
     return {
         "status": "REGISTRATION_COMPLETE",
-        "mode": "MOCK",
+        "mode": "MOCK_WITH_LIVE_CV",
+        "project_id": project_id,
+        "homography_metrics": {
+            **registration.to_dict(),
+            "warped_image": None,
+        },
+        "biological_canopy_delta": canopy.to_dict(),
+    }
+
+
+def _decode_rgb(data: bytes) -> np.ndarray:
+    """Decode an uploaded JPEG/PNG into an RGB uint8 array."""
+    arr = np.frombuffer(data, dtype=np.uint8)
+    if arr.size == 0:
+        raise ValueError("empty upload")
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError(
+            "Could not decode the upload as an image. Expected JPEG or PNG."
+        )
+    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+
+def _stub_cv_response() -> dict:
+    """The historical canned values from docs/05-API-SPEC.md section 1.3."""
+    return {
+        "status": "REGISTRATION_COMPLETE",
+        "mode": "MOCK_STUBBED",
         "homography_metrics": {
             "sift_keypoints_baseline": 3412,
             "sift_keypoints_progress": 2984,
             "good_flann_matches": 412,
             "magsac_inliers": 348,
             "inlier_ratio": 0.845,
-            "homography_condition_number": 421.4,
             "is_geometrically_valid": True,
-            "note": "STUBBED — values are the docs/05 canonical example, not computed.",
+            "note": "STUBBED — canned values, not computed.",
         },
         "biological_canopy_delta": {
             "baseline_canopy_pixels": 142100,
@@ -315,7 +391,6 @@ async def align_and_diff(
             "net_canopy_growth_pct": 38.23,
             "vegetative_index_method": "Shadow-Invariant Green Leaf Index (GLI) + Otsu",
         },
-        "cloudinary_warped_asset_id": "veritas_demo/after_warped_id",
     }
 
 

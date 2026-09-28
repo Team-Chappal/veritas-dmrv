@@ -21,7 +21,7 @@ Executes astronomical physics verification and JEV RLCD triage on inbound field 
 
 * **URL:** `POST /api/v1/triage/evaluate`
 * **Content-Type:** `application/json`
-* **Latency Target:** $< 150\text{ ms}$
+* **Latency Target:** $< 150\text{ ms}$ (measured 1.1 ms median — `docs/LATENCY-BASELINE.md`)
 
 #### Request Body
 ```json
@@ -82,7 +82,7 @@ Extracts feature descriptors, computes the homography matrix, warps progress med
 
 * **URL:** `POST /api/v1/cv/align-and-diff`
 * **Content-Type:** `multipart/form-data`
-* **Latency Target:** $< 800\text{ ms}$
+* **Latency Target:** $< 800\text{ ms}$ (measured 341 ms at 1080p, 329 ms at 4K — `docs/LATENCY-BASELINE.md`)
 
 #### Request Form Data
 * `baseline_image`: Binary JPEG/PNG file ($T_1$ Baseline Anchor)

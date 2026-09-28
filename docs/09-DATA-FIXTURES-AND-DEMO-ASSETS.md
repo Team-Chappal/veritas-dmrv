@@ -44,7 +44,7 @@ An untrusted contractor claims to have planted 500 indigenous Acacia trees in th
 
 ### 2.3 Visual Demonstration
 * **User Action:** Drag-and-drop `fixture_fraud_nursery.jpg`.
-* **Instant Reaction (<150ms):** 
+* **Instant Reaction (<150ms — measured 1.1ms median, see `docs/LATENCY-BASELINE.md`):** 
   * The image is outlined in bold crimson red (`#EF4444`).
   * A **Forensic Compass Dial HUD** overlays the image, displaying a yellow sun ray at $284^\circ$ and a red warning arrow showing the physical shadow pointing at $274^\circ$ ($\Delta = 170^\circ$).
   * Banner reads: `[QUARANTINED BY JEV: Solar Ephemeris Violation — Claimed 2:30 PM, Shadow Proves 8:15 AM]`.
@@ -96,7 +96,7 @@ A genuine, community-led mangrove restoration project in the Kilifi Creek Delta,
 
 ### 3.3 Visual Demonstration
 * **User Action:** Select "Kilifi Creek Mangrove Zone" $\rightarrow$ Click "Verify Month 18 Milestone".
-* **Instant Reaction (<800ms):**
+* **Instant Reaction (<800ms — measured 341ms at 1080p / 329ms at 4K median, see `docs/LATENCY-BASELINE.md`):**
   * The screen smoothly loads the **Interactive Before/After Split Slider**.
   * The camera perspective shift is completely eliminated; horizon landmarks and mangrove creek banks align seamlessly.
   * Moving the slider reveals barren grey mud transitioning into lush green canopy.

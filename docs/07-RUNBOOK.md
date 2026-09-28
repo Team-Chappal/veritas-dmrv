@@ -120,7 +120,8 @@ TIMECODE         SPEAKER ACTION                   ON-SCREEN VISUAL / LIVE DEMO
 
 00:30 - 01:15    Speaker: "Watch what happens     LIVE DRAG-AND-DROP:
                  when someone uploads a fake."    Drag fake nursery photo into upload widget.
-                 "Our System-1 checks the sun."   INSTANT FLASH: Red Alert Badge appears in <150ms:
+                 "Our System-1 checks the sun."   INSTANT FLASH: Red Alert Badge appears in <150ms (measured)
+                                   (measured 1.1ms median; docs/LATENCY-BASELINE.md):
                                                   [QUARANTINED: Sun angle mismatch - Claimed 2 PM, 
                                                    Shadow proves 8:15 AM + Recycled pHash detected].
                                                   Show Cloudinary metadata updated to QUARANTINE_FRAUD.

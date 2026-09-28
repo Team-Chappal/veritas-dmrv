@@ -1,0 +1,105 @@
+{
+  "generated_utc": "2026-09-28T03:45:17+00:00",
+  "repeats": 12,
+  "image_resolution": "1920x1080",
+  "megapixels": 2.07,
+  "machine": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "processor": "Apple M3",
+    "machine": "arm64",
+    "python": "3.13.9",
+    "opencv": "4.10.0",
+    "numpy": "2.1.1",
+    "cpu_count_logical": 8,
+    "opencv_threads": 8
+  },
+  "solar": {
+    "solar_triage_median_ms": 1.11,
+    "solar_triage_p95_ms": 1.18,
+    "solar_triage_min_ms": 1.05,
+    "solar_triage_max_ms": 1.18
+  },
+  "homography": {
+    "registration_wall_median_ms": 338.81,
+    "registration_wall_p95_ms": 344.41,
+    "registration_wall_min_ms": 335.47,
+    "registration_wall_max_ms": 344.41,
+    "preprocess_and_detect_median_ms": 299.3,
+    "preprocess_and_detect_p95_ms": 304.96,
+    "preprocess_and_detect_min_ms": 296.53,
+    "preprocess_and_detect_max_ms": 304.96,
+    "match_median_ms": 35.8,
+    "match_p95_ms": 37.2,
+    "match_min_ms": 35.01,
+    "match_max_ms": 37.2,
+    "homography_median_ms": 0.4,
+    "homography_p95_ms": 0.5,
+    "homography_min_ms": 0.38,
+    "homography_max_ms": 0.5,
+    "warp_median_ms": 2.3,
+    "warp_p95_ms": 3.01,
+    "warp_min_ms": 2.01,
+    "warp_max_ms": 3.01,
+    "inlier_ratio": 0.9351,
+    "status": "ALIGNED_HOMOGRAPHY",
+    "detection_downscale": 1.0,
+    "sift_keypoints_baseline": 2626
+  },
+  "canopy": {
+    "canopy_delta_median_ms": 9.73,
+    "canopy_delta_p95_ms": 10.44,
+    "canopy_delta_min_ms": 9.29,
+    "canopy_delta_max_ms": 10.44
+  },
+  "end_to_end_median_ms": 348.54,
+  "sweep": [
+    {
+      "label": "540p",
+      "resolution": "960x540",
+      "megapixels": 0.52,
+      "registration_median_ms": 115.24,
+      "registration_p95_ms": 116.31,
+      "canopy_median_ms": 10.08,
+      "end_to_end_median_ms": 125.32,
+      "detection_downscale": 1.0,
+      "inlier_ratio": 0.9225,
+      "meets_800ms_target": true
+    },
+    {
+      "label": "1080p",
+      "resolution": "1920x1080",
+      "megapixels": 2.07,
+      "registration_median_ms": 341.23,
+      "registration_p95_ms": 343.22,
+      "canopy_median_ms": 10.03,
+      "end_to_end_median_ms": 351.26,
+      "detection_downscale": 1.0,
+      "inlier_ratio": 0.936,
+      "meets_800ms_target": true
+    },
+    {
+      "label": "4K",
+      "resolution": "3840x2160",
+      "megapixels": 8.29,
+      "registration_median_ms": 329.23,
+      "registration_p95_ms": 333.14,
+      "canopy_median_ms": 10.37,
+      "end_to_end_median_ms": 339.6,
+      "detection_downscale": 2.0,
+      "inlier_ratio": 0.7066,
+      "meets_800ms_target": true
+    },
+    {
+      "label": "8K",
+      "resolution": "7680x4320",
+      "megapixels": 33.18,
+      "registration_median_ms": 444.89,
+      "registration_p95_ms": 446.05,
+      "canopy_median_ms": 9.69,
+      "end_to_end_median_ms": 454.58,
+      "detection_downscale": 4.0,
+      "inlier_ratio": 0.5455,
+      "meets_800ms_target": true
+    }
+  ]
+}

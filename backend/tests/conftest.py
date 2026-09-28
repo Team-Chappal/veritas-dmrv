@@ -197,34 +197,119 @@ def moire_image() -> np.ndarray:
 # --------------------------------------------------------------------------- #
 
 
+def make_soil_scene(
+    height: int = 480,
+    width: int = 640,
+    canopy_fraction: float = 0.15,
+    seed: int = 1,
+    brightness: float = 1.0,
+) -> np.ndarray:
+    """A soil background with elliptical green canopy patches.
+
+    Built with genuine chromatic separation (brown soil, green foliage) rather
+    than blended colours, because the whole point is to give GLI and Otsu a
+    bimodal distribution to actually split.
+    """
+    import cv2 as _cv2
+
+    rng = np.random.default_rng(seed)
+    img = np.zeros((height, width, 3), dtype=np.float32)
+    img[:] = np.array([128.0, 96.0, 68.0]) + rng.normal(0.0, 9.0, (height, width, 1))
+
+    target = canopy_fraction * height * width
+    drawn = 0.0
+    guard = 0
+    while drawn < target and guard < 4000:
+        guard += 1
+        cx, cy = int(rng.integers(0, width)), int(rng.integers(0, height))
+        ax, ay = int(rng.integers(10, 34)), int(rng.integers(8, 28))
+        angle = float(rng.uniform(0.0, 180.0))
+        _cv2.ellipse(img, (cx, cy), (ax, ay), angle, 0, 360, (58.0, 150.0, 52.0), -1)
+        drawn += np.pi * ax * ay
+
+    img += rng.normal(0.0, 4.0, img.shape)
+    img = np.clip(img, 0, 255)
+    if brightness != 1.0:
+        img = np.clip(img * brightness, 0, 255)
+    return img.astype(np.uint8)
+
+
+def make_cluttered_scene(
+    height: int = 400, width: int = 600, seed: int = 5
+) -> np.ndarray:
+    """A textured scene with strong repeatable structure, for SIFT.
+
+    Needs many distinct corners: SIFT is meaningless on a flat field, and the
+    earlier green-circles fixture produced keypoints that only matched because
+    the circles were drawn identically in both frames.
+    """
+    import cv2 as _cv2
+
+    rng = np.random.default_rng(seed)
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    img[:] = (120, 104, 88)
+
+    for _ in range(220):
+        cx, cy = int(rng.integers(0, width)), int(rng.integers(0, height))
+        radius = int(rng.integers(4, 26))
+        colour = tuple(int(v) for v in rng.integers(0, 255, 3))
+        _cv2.circle(img, (cx, cy), radius, colour, -1)
+    for _ in range(40):
+        x0, y0 = int(rng.integers(0, width - 40)), int(rng.integers(0, height - 40))
+        _cv2.rectangle(
+            img, (x0, y0), (x0 + int(rng.integers(15, 70)), y0 + int(rng.integers(10, 45))),
+            tuple(int(v) for v in rng.integers(0, 255, 3)), -1,
+        )
+    noisy = img.astype(np.int16) + rng.normal(0.0, 7.0, img.shape).astype(np.int16)
+    return np.clip(noisy, 0, 255).astype(np.uint8)
+
+
+def apply_transform(
+    image: np.ndarray, angle_deg: float = 0.0, translate_px: float = 0.0,
+    scale: float = 1.0, output_shape: tuple | None = None,
+) -> np.ndarray:
+    """Apply a known similarity transform, for ground-truth registration tests."""
+    import cv2 as _cv2
+
+    h, w = image.shape[:2]
+    out_h, out_w = output_shape if output_shape else (h, w)
+    m = _cv2.getRotationMatrix2D((w / 2, h / 2), angle_deg, scale)
+    m[0, 2] += translate_px
+    m[1, 2] += translate_px * 0.4
+    return _cv2.warpAffine(image, m, (out_w, out_h), borderMode=_cv2.BORDER_REFLECT)
+
+
+@pytest.fixture
+def soil_scene():
+    return make_soil_scene()
+
+
+@pytest.fixture
+def cluttered_scene():
+    return make_cluttered_scene()
+
+
 @pytest.fixture
 def forest_pair():
-    """Baseline and a rigidly-transformed progress frame.
+    """A cluttered baseline and a known-transformed version of itself.
 
-    Used to assert the SIFT pipeline recovers a known ground-truth
-    transform. Available now so Stage 2 has a contract to build against.
+    Provides ground truth (angle, translation) so the SIFT pipeline can be
+    scored against a known answer rather than merely "it returned something".
     """
-    import cv2
-
-    h, w = 400, 600
-    rng = np.random.default_rng(42)
-    baseline = np.zeros((h, w, 3), dtype=np.uint8)
-    for _ in range(90):
-        cx = int(rng.integers(50, w - 50))
-        cy = int(rng.integers(50, h - 50))
-        radius = int(rng.integers(10, 25))
-        colour = (int(rng.integers(0, 40)), int(rng.integers(140, 220)), int(rng.integers(20, 80)))
-        cv2.circle(baseline, (cx, cy), radius, colour, -1)
-    baseline += rng.normal(0.0, 6.0, baseline.shape)
-    baseline = np.clip(baseline, 0, 255).astype(np.uint8)
-
+    baseline = make_cluttered_scene(seed=5)
     angle, translate = 8.0, 15.0
-    matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
-    matrix[0, 2] += translate
-    progress = cv2.warpAffine(baseline, matrix, (w, h))
+    progress = apply_transform(baseline, angle_deg=angle, translate_px=translate)
     return {
         "baseline": baseline,
         "progress": progress,
         "ground_truth_angle_deg": angle,
         "ground_truth_translate_px": translate,
     }
+
+
+@pytest.fixture
+def canopy_growth_pair():
+    """A dimmer visit with genuinely more canopy — the measurement case."""
+    baseline = make_soil_scene(canopy_fraction=0.12, seed=3)
+    progress = make_soil_scene(canopy_fraction=0.20, seed=3, brightness=0.65)
+    return {"baseline": baseline, "progress": progress}

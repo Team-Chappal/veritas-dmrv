@@ -128,6 +128,11 @@ Regenerate with `make fixtures`; verify freshness in CI with `make fixtures-chec
 
 ## 2. Algorithmic Module 2: OpenCV SIFT + USAC_MAGSAC++ Planar Homography Alignment
 
+> **SUPERSEDED in v1.2.0.** The authoritative implementation is
+> `backend/services/homography_service.py`. Three things in the original design
+> below were measured and did not work; see sections 2.3-2.5. The pipeline shape
+> (CLAHE -> SIFT -> FLANN -> Lowe -> MAGSAC++ -> warp) is unchanged and correct.
+
 ### 2.1 Production Computer Vision Implementation
 Includes full error handling, CLAHE normalization, KD-Tree matching, and MAGSAC++ matrix estimation with singular value condition checking:
 
@@ -241,6 +246,51 @@ def register_with_tps_fallback(
 ---
 
 ## 3. Algorithmic Module 3: Radiometric Normalization & Shadow-Invariant Canopy Quantification
+
+> **SUPERSEDED in v1.2.0.** Authoritative implementations are
+> `backend/services/radiometric_service.py` and
+> `backend/services/canopy_service.py`. The per-channel histogram matching in
+> section 3.1 was measured and **rejected from the measurement path** — see
+> section 3.3.
+
+### 3.3 Histogram Matching: Measured and Rejected
+
+The design specified per-channel cumulative-histogram matching, while describing
+the method as "Pseudo-Invariant Feature (PIF) Radiometric Normalization". Those
+are different algorithms, and the measurements decide which is correct.
+
+**GLI is algebraically invariant to any illumination field.** For a per-pixel
+scalar gain `c`:
+
+```
+GLI(cR, cG, cB) = (2cG - cR - cB) / (2cG + cR + cB) = GLI(R, G, B)
+```
+
+Measured residual: `3.2e-2` under a local cloud-shadow field varying 0.45-0.98,
+and `<= 7.7e-2` for global gains from 0.5x to 2.0x. Both are uint8
+re-quantisation and highlight clipping, not failure of the invariance. With 0%
+of pixels clipping, the residual is `0.008`.
+
+Consequences:
+
+| Correction | Needed for GLI? | Why |
+| :--- | :--- | :--- |
+| Scalar luminance gain | **No** | GLI cancels it exactly. Applying it only re-quantises the image. |
+| Chromatic / white-balance drift | **Yes** | Measured `1.05e-1` GLI error when blue is attenuated 0.82x. Corrected with per-channel *scalar* gains on a pseudo-invariant reference — the PIF method the document actually described. |
+| Per-channel histogram matching | **No — rejected** | Measured to shift GLI by `1.69e-1` (shadowed) to `2.45e-1` (white-balance shifted): **2-4x larger than the drift it removes.** It equalises each channel's CDF independently, perturbing the chromatic ratios GLI depends on. |
+
+`histogram_match_channels()` is retained for tonal inspection only, is excluded
+from the measurement path, and `assert_not_measurement_safe()` raises if a
+future caller reaches for it without making that choice explicit.
+
+### 3.4 A Silent 100% Canopy Measurement
+
+Otsu thresholding is undefined on a zero-variance histogram: it returns a
+threshold of 0, which labels **every** pixel as vegetation. A constant
+(40, 40, 30) frame has GLI = 0.0667 everywhere, and produced a 100% canopy mask
+with a confident 0% growth delta. `canopy_service` now detects
+`std(GLI) < MIN_GLI_STD_FOR_OTSU` and returns `INSUFFICIENT_CONTRAST` with no
+delta, rather than a number.
 
 ### 3.1 Radiometric Calibration via Histogram Matching
 Field photos taken at different dates or under variable cloud cover suffer from distinct solar irradiance, causing false canopy mortality readings under raw RGB subtraction. VERITAS applies **Pseudo-Invariant Feature (PIF)** Radiometric Normalization before computing vegetation indices:

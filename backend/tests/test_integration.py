@@ -167,9 +167,8 @@ class TestMockHealth:
         assert body["status"] == "ONLINE"
         assert body["mode"] == "MOCK_DEVELOPMENT_SERVER"
         assert "solar_ephemeris" in body["capabilities"]
-        # Photogrammetry is stubbed, and the server must say so rather than
-        # letting a frontend believe the numbers are computed.
-        assert body["capabilities"]["photogrammetry"] is False
+        assert "photogrammetry" in body["capabilities"]
+        assert "canopy_quantification" in body["capabilities"]
 
     def test_versioned_health_alias(self, client):
         assert client.get("/v1/health").json()["status"] == "ONLINE"
@@ -256,30 +255,127 @@ class TestMockTriageContract:
 
 
 class TestMockPhotogrammetry:
-    def test_align_and_diff_returns_documented_values(self, client):
+    """The CV route runs for real when OpenCV is present.
+
+    It was stubbed through Stage 1 because the computer-vision track had not
+    been built. These tests pin that the route now computes rather than returns
+    canned numbers, and that a frontend can still request a stable payload.
+    """
+
+    @staticmethod
+    def _png(img) -> bytes:
+        import cv2
+
+        ok, buf = cv2.imencode(".png", img[:, :, ::-1])
+        assert ok
+        return buf.tobytes()
+
+    @pytest.fixture
+    def real_pair(self):
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from conftest import apply_transform, make_cluttered_scene
+
+        base = make_cluttered_scene(400, 600, seed=5)
+        return base, apply_transform(base, angle_deg=8.0, translate_px=15.0)
+
+    def test_computes_registration_rather_than_returning_canned_values(
+        self, client, real_pair
+    ):
+        import mock_server
+
+        if not mock_server.CV_AVAILABLE:
+            pytest.skip("OpenCV not installed")
+        base, prog = real_pair
         r = client.post(
             "/v1/cv/align-and-diff",
             files={
-                "baseline_image": ("a.jpg", b"\xff\xd8\xff\xd9", "image/jpeg"),
-                "progress_image": ("b.jpg", b"\xff\xd8\xff\xd9", "image/jpeg"),
+                "baseline_image": ("b.png", self._png(base), "image/png"),
+                "progress_image": ("p.png", self._png(prog), "image/png"),
             },
             data={"project_id": "KEN-042"},
         ).json()
-        assert r["status"] == "REGISTRATION_COMPLETE"
-        assert r["biological_canopy_delta"]["net_canopy_growth_pct"] == 38.23
-        assert "GLI" in r["biological_canopy_delta"]["vegetative_index_method"]
 
-    def test_stub_is_labelled_as_a_stub(self, client):
-        """A frontend must never mistake stubbed numbers for computed ones."""
+        assert r["status"] == "REGISTRATION_COMPLETE"
+        hm = r["homography_metrics"]
+        # Live keypoint counts, not the historical 3412/2984.
+        assert hm["sift_keypoints_baseline"] > 0
+        assert hm["inlier_ratio"] > 0.70
+        assert hm["residual_rmse_px"] < 2.0
+        assert "detection_downscale" in hm
+
+    def test_canopy_delta_is_computed(self, client, real_pair):
+        import mock_server
+
+        if not mock_server.CV_AVAILABLE:
+            pytest.skip("OpenCV not installed")
+        base, prog = real_pair
         r = client.post(
             "/v1/cv/align-and-diff",
             files={
-                "baseline_image": ("a.jpg", b"x", "image/jpeg"),
-                "progress_image": ("b.jpg", b"x", "image/jpeg"),
+                "baseline_image": ("b.png", self._png(base), "image/png"),
+                "progress_image": ("p.png", self._png(prog), "image/png"),
             },
         ).json()
-        assert r["mode"] == "MOCK"
+        assert r["biological_canopy_delta"]["index_used"] == "GLI"
+        assert r["biological_canopy_delta"]["net_canopy_growth_pct"] is not None
+
+    def test_stub_mode_still_serves_canned_values(self, client, monkeypatch, real_pair):
+        """Frontend work needing a stable payload can still ask for one."""
+        import mock_server
+
+        monkeypatch.setenv("VERITAS_STUB_CV", "1")
+        base, prog = real_pair
+        r = client.post(
+            "/v1/cv/align-and-diff",
+            files={
+                "baseline_image": ("b.png", self._png(base), "image/png"),
+                "progress_image": ("p.png", self._png(prog), "image/png"),
+            },
+        ).json()
+        assert r["mode"] == "MOCK_STUBBED"
+        assert r["homography_metrics"]["sift_keypoints_baseline"] == 3412
         assert "STUBBED" in r["homography_metrics"]["note"]
+
+    def test_failed_registration_withholds_a_canopy_delta(self, client):
+        """A delta without a valid registration would be fabricated evidence."""
+        import numpy as np
+        import cv2
+
+        flat = np.full((300, 400, 3), 128, np.uint8)
+        ok, buf = cv2.imencode(".png", flat)
+        payload = buf.tobytes()
+        r = client.post(
+            "/v1/cv/align-and-diff",
+            files={
+                "baseline_image": ("f.png", payload, "image/png"),
+                "progress_image": ("f.png", payload, "image/png"),
+            },
+        ).json()
+        assert r["status"] == "REGISTRATION_FAILED"
+        assert r["biological_canopy_delta"]["net_canopy_growth_pct"] is None
+
+    def test_undecodable_upload_is_422(self, client):
+        r = client.post(
+            "/v1/cv/align-and-diff",
+            files={
+                "baseline_image": ("a.jpg", b"not an image", "image/jpeg"),
+                "progress_image": ("b.jpg", b"not an image", "image/jpeg"),
+            },
+        )
+        assert r.status_code == 422
+
+    def test_empty_upload_is_422(self, client):
+        r = client.post(
+            "/v1/cv/align-and-diff",
+            files={
+                "baseline_image": ("a.jpg", b"", "image/jpeg"),
+                "progress_image": ("b.jpg", b"x", "image/jpeg"),
+            },
+        )
+        assert r.status_code == 422
 
 
 class TestMockDossier:

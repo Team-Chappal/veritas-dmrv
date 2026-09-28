@@ -53,7 +53,7 @@ journey
       Hardware attestation seals sensor payload: 5: PWA Client
       Background upload via Cloudinary chunking: 4: Cloudinary SDK
     section Automated Triage (System 1)
-      JEV verifies solar ephemeris in <150ms: 5: JEV Engine
+      JEV verifies solar ephemeris in <150ms (measured 1.1ms; docs/LATENCY-BASELINE.md): 5: JEV Engine
       OpenCV registers camera perspective: 5: OpenCV SIFT
     section Portfolio Oversight (Program Lead)
       Reviews longitudinal canopy growth: 5: Program Lead
@@ -117,6 +117,7 @@ journey
 ## 5. Non-Functional Requirements (NFRS)
 
 * **NFR-1 (Performance & Latency):** System-1 forensic triage by JEV must respond in $< 150\text{ ms}$. OpenCV SIFT homography alignment must execute in $< 800\text{ ms}$ on 2K resolution imagery.
+  > **MEASURED (v1.2.0).** Both targets are met. Solar ephemeris + shadow coherence: **1.1 ms median**. SIFT + USAC_MAGSAC++ registration: **341 ms median at 1080p**, **329 ms at 4K** (area-budgeted detection downscale), against an 800 ms target. End-to-end register + measure is ~351 ms at 1080p. Full method, machine profile and resolution sweep: `docs/LATENCY-BASELINE.md`, regenerable with `make bench`. Known limit: at 8K the detection downscale pushes the SIFT inlier ratio to ~0.55, below the 0.60 trust floor — the pipeline reports this rather than returning a confident registration from a degraded keypoint set.
 * **NFR-2 (Reliability & Offline-First):** Client-side PWA must allow capturing, geofencing, and queuing up to 500 photos in local IndexedDB without an active internet connection.
 * **NFR-3 (Security & Trust):** All uploaded master assets must be anchored with an immutable SHA-256 hash and C2PA Content Credentials. Cloudinary delivery URLs must enforce HTTPS with optional HMAC-SHA256 signature tokens.
 * **NFR-4 (Statutory Compliance):** All spatial data must conform to WGS84 GeoJSON closed polygon standards with 6 decimal places of precision, adhering to EUDR Article 9.
