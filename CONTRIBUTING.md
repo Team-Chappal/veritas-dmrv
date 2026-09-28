@@ -112,3 +112,4 @@ Known cases where this standard caught us:
 | Solar test vectors | all four outside their own tolerance; one physically impossible |
 | `createThinPlateSplineShapeTransformer` | does not exist in OpenCV 4.10 |
 | `react@19.0.0-rc-66855b96-20241015` | HTTP 404, never published |
+| `react@19.0.0-rc-65a56d0e-20241020` | resolved, but pinned as an **exact** version by `next@15.0.0` — a framework pinning one dated RC is a maintenance trap |
