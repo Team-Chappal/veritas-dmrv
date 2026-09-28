@@ -1219,47 +1219,59 @@ def list_assets(
     limit = max(1, min(int(limit), ASSET_PAGE_MAX))
     offset = max(0, int(offset))
 
-    rows = list(_corpus())
-    if project_id:
-        rows = [r for r in rows if r["esg_project_id"] == project_id]
-    if phase:
-        rows = [r for r in rows if r["milestone_phase"] == phase]
-    if decision:
-        rows = [r for r in rows if r["jev_triage_decision"] == decision]
-    if domain:
-        rows = [r for r in rows if r["sustainability_domain"] == domain]
-    if tag:
-        rows = [r for r in rows if tag in (r.get("tags") or [])]
-    if c2pa:
-        rows = [r for r in rows if r["c2pa_provenance"] == c2pa]
-    if q:
-        needle = q.strip().lower()
-        rows = [
-            r for r in rows
-            if needle in r["public_id"].lower()
-            or any(needle in str(t).lower() for t in (r.get("tags") or []))
-        ]
+    def apply(rows: list, skip: Optional[str] = None) -> list:
+        """Filter, optionally ignoring one dimension.
+
+        ``skip`` exists for facet counting. Each axis is counted with every
+        filter applied EXCEPT its own, which is standard faceted-search
+        behaviour: a chip must keep offering the alternatives, or applying a
+        filter makes the other chips vanish and the reviewer is trapped in the
+        filter they just applied. Counting the `decision` facet with the
+        `decision` filter applied collapses it to the one selected value, so
+        you could not switch straight from "quarantined" to "review" and the
+        counts stopped meaning "how many would I get".
+        """
+        out = rows
+        if project_id and skip != "project_id":
+            out = [r for r in out if r["esg_project_id"] == project_id]
+        if phase and skip != "phase":
+            out = [r for r in out if r["milestone_phase"] == phase]
+        if decision and skip != "decision":
+            out = [r for r in out if r["jev_triage_decision"] == decision]
+        if domain and skip != "domain":
+            out = [r for r in out if r["sustainability_domain"] == domain]
+        if tag:
+            out = [r for r in out if tag in (r.get("tags") or [])]
+        if c2pa and skip != "c2pa":
+            out = [r for r in out if r["c2pa_provenance"] == c2pa]
+        if q:
+            needle = q.strip().lower()
+            out = [
+                r for r in out
+                if needle in r["public_id"].lower()
+                or any(needle in str(t).lower() for t in (r.get("tags") or []))
+            ]
+        return out
+
+    rows = apply(_corpus())
 
     rows.sort(key=lambda r: r["capture_timestamp"], reverse=True)
 
-    # Facet counts come from the FILTERED set, so the chips tell a reviewer what
-    # switching to a filter would actually yield rather than the whole corpus.
-    facets = {
-        "decision": {},
-        "phase": {},
-        "c2pa": {},
-        "domain": {},
-    }
-    for r in rows:
-        for key, field in (
-            ("decision", "jev_triage_decision"),
-            ("phase", "milestone_phase"),
-            ("c2pa", "c2pa_provenance"),
-            ("domain", "sustainability_domain"),
-        ):
+    # Each axis counted with its own filter lifted, so every chip stays visible
+    # and its number answers "how many would I get if I chose this?".
+    facets: dict[str, dict] = {}
+    for axis, field in (
+        ("decision", "jev_triage_decision"),
+        ("phase", "milestone_phase"),
+        ("c2pa", "c2pa_provenance"),
+        ("domain", "sustainability_domain"),
+    ):
+        counts: dict[str, int] = {}
+        for r in apply(_corpus(), skip=axis):
             value = r.get(field)
             if value:
-                facets[key][value] = facets[key].get(value, 0) + 1
+                counts[value] = counts.get(value, 0) + 1
+        facets[axis] = dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
     return {
         "mode": "MOCK",

@@ -116,7 +116,43 @@ function facet(assets: AssetSummary[], key: keyof AssetSummary): Record<string, 
   return Object.fromEntries(Object.entries(out).sort((x, y) => y[1] - x[1]));
 }
 
-/** Mirrors the backend's filter semantics so fixture mode behaves the same. */
+/**
+ * Mirrors the backend's filter AND facet semantics, so fixture mode behaves
+ * identically. The facet lift matters: counting an axis with its own filter
+ * applied collapses it to the single selected value, the other chips vanish, and
+ * the reviewer is trapped in the filter they just applied.
+ */
+function applyFilters(
+  rows: AssetSummary[],
+  f: { [k: string]: string | number | undefined },
+  skip?: string
+): AssetSummary[] {
+  let out = rows;
+  if (f.project_id && skip !== "project_id")
+    out = out.filter((a) => a.esg_project_id === f.project_id);
+  if (f.phase && skip !== "phase") out = out.filter((a) => a.milestone_phase === f.phase);
+  if (f.decision && skip !== "decision")
+    out = out.filter((a) => a.jev_triage_decision === f.decision);
+  if (f.domain && skip !== "domain")
+    out = out.filter((a) => a.sustainability_domain === f.domain);
+  if (f.tag) out = out.filter((a) => a.tags.includes(String(f.tag)));
+  if (f.c2pa && skip !== "c2pa") out = out.filter((a) => a.c2pa_provenance === f.c2pa);
+  if (f.q) {
+    const n = String(f.q).toLowerCase();
+    out = out.filter(
+      (a) => a.public_id.toLowerCase().includes(n) || a.tags.some((t) => t.toLowerCase().includes(n))
+    );
+  }
+  return out;
+}
+
+const FACET_AXES: Array<[keyof FacetCounts, keyof AssetSummary]> = [
+  ["decision", "jev_triage_decision"],
+  ["phase", "milestone_phase"],
+  ["c2pa", "c2pa_provenance"],
+  ["domain", "sustainability_domain"],
+];
+
 export function filterFixture(f: {
   project_id?: string;
   phase?: string;
@@ -128,30 +164,15 @@ export function filterFixture(f: {
   limit?: number;
   offset?: number;
 }): AssetListResponse {
-  let rows = [...DEMO_ASSETS];
-  if (f.project_id) rows = rows.filter((a) => a.esg_project_id === f.project_id);
-  if (f.phase) rows = rows.filter((a) => a.milestone_phase === f.phase);
-  if (f.decision) rows = rows.filter((a) => a.jev_triage_decision === f.decision);
-  if (f.domain) rows = rows.filter((a) => a.sustainability_domain === f.domain);
-  if (f.tag) rows = rows.filter((a) => a.tags.includes(f.tag!));
-  if (f.c2pa) rows = rows.filter((a) => a.c2pa_provenance === f.c2pa);
-  if (f.q) {
-    const n = f.q.toLowerCase();
-    rows = rows.filter(
-      (a) =>
-        a.public_id.toLowerCase().includes(n) ||
-        a.tags.some((t) => t.toLowerCase().includes(n))
-    );
-  }
+  const rows = applyFilters(DEMO_ASSETS, f);
 
   const limit = f.limit ?? 24;
   const offset = f.offset ?? 0;
-  const facets: FacetCounts = {
-    decision: facet(rows, "jev_triage_decision"),
-    phase: facet(rows, "milestone_phase"),
-    c2pa: facet(rows, "c2pa_provenance"),
-    domain: facet(rows, "sustainability_domain"),
-  };
+  // Each axis counted with its OWN filter lifted, matching the backend.
+  const facets = {} as FacetCounts;
+  for (const [axis, field] of FACET_AXES) {
+    facets[axis] = facet(applyFilters(DEMO_ASSETS, f, axis), field);
+  }
 
   return {
     total_matched: rows.length,
