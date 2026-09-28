@@ -13,6 +13,8 @@
  *   3. Compare before-and-after          -> ProofOfImpactStudio
  */
 
+import ProvenancePanel from "@/components/ProvenancePanel";
+
 type Stage = {
   id: string;
   title: string;
@@ -102,6 +104,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* Rubric bullet 6 — the first real Stage 6 component on the page. */}
+      <ProvenancePanel />
 
       <footer className="border-t border-slate-800 pt-6 font-mono text-xs text-slate-500">
         <p>

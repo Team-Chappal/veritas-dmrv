@@ -15,8 +15,16 @@ import { expect, test } from "@playwright/test";
 test.describe("Stage 6 exit criterion 5 — backend absent", () => {
   test("the shell renders with no backend running", async ({ page }) => {
     const failures: string[] = [];
+    // Network-level console entries are the BROWSER reporting a refused
+    // connection, not the application throwing. The backend being absent is the
+    // state under test, so failing on those would mean this test can only ever
+    // pass with a server running -- which is the opposite of its purpose. A
+    // hydration warning or a React error still fails, and that is the point.
+    const isNetworkNoise = (text: string) =>
+      /Failed to load resource|ERR_CONNECTION_REFUSED|ERR_NETWORK|net::/i.test(text);
+
     page.on("console", (m) => {
-      if (m.type() === "error") failures.push(m.text());
+      if (m.type() === "error" && !isNetworkNoise(m.text())) failures.push(m.text());
     });
     page.on("pageerror", (e) => failures.push(String(e)));
 
