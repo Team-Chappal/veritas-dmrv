@@ -516,9 +516,8 @@ def audit_dossier(project_id: str) -> dict:
         stand_area_ha=stand_area_ha,
         stems_per_hectare=stems_per_hectare,
     )
-    discount = apply_vm0047_uncertainty_discount(
-        gross_tco2e=biomass.co2e_metric_tons, sampling_error_pct=8.7
-    )
+    # VM0047 8.4 discounts only sampling error ABOVE 15%, so at 8.7% the net
+    # figure equals the gross one. That is the rule, not a missing multiplier.
     discount = apply_vm0047_uncertainty_discount(
         gross_tco2e=biomass.co2e_metric_tons, sampling_error_pct=8.7
     )
@@ -969,3 +968,206 @@ def project_timeline(project_id: str) -> dict:
         ])
     ]
     return {"mode": "MOCK", **build_timeline(project_id, assets).to_dict()}
+
+
+# --------------------------------------------------------------------------- #
+# Stage 5.1 — bulk ingest
+# --------------------------------------------------------------------------- #
+
+#: A single field batch is a phone's worth of frames. Not a limit on the project,
+#: a limit on one request: a field officer on a weak uplink should get results
+#: for what did upload rather than lose the whole batch to one bad file.
+INGEST_MAX_FILES = 50
+
+#: Guards against a decompression bomb: a 50 MB PNG of noise can expand to
+#: gigabytes in memory. Decoded size, not upload size, is the real exposure.
+INGEST_MAX_PIXELS = 80_000_000
+
+
+def _ingest_one(name: str, data: bytes, context: dict) -> dict:
+    """Enrich a single file, reporting failure rather than raising.
+
+    Partial success is the point. A batch of 40 frames where one is corrupt
+    should ingest 39 and say which one failed and why -- not return 400 and
+    discard the evidence the officer just spent a morning collecting.
+    """
+    item: dict = {
+        "filename": name,
+        "status": "INGESTED",
+        "tags": [],
+        "error": None,
+    }
+    if not data:
+        item.update(status="REJECTED", error="empty upload")
+        return item
+    try:
+        img = _decode_rgb(data)
+    except ValueError as exc:
+        item.update(status="REJECTED", error=str(exc))
+        return item
+
+    height, width = img.shape[:2]
+    if height * width > INGEST_MAX_PIXELS:
+        item.update(
+            status="REJECTED",
+            error=f"decoded image is {width}x{height} px, over the "
+                  f"{INGEST_MAX_PIXELS} px decode ceiling",
+        )
+        return item
+
+    result = enrich_asset(img, asset_id=name, context=context)
+    item.update(
+        status="INGESTED",
+        asset_id=result.asset_id,
+        width_px=width,
+        height_px=height,
+        tags=[t.tag.value if hasattr(t.tag, "value") else str(t.tag) for t in result.tags],
+        tag_evidence={t.tag.value if hasattr(t.tag, "value") else str(t.tag): t.confidence
+                      for t in result.tags},
+        signals=result.signals,
+    )
+    return item
+
+
+@app.post("/v1/media/ingest")
+@app.post("/api/v1/media/ingest")
+async def ingest_media(
+    files: list[UploadFile] = File(...),
+    project_id: str = Form("KEN-042"),
+    milestone_phase: str = Form("baseline"),
+    sustainability_domain: str = Form("afforestation"),
+    _principal: Principal = Depends(enforce_scope(SCOPE_FIELD_UPLOAD)),
+) -> dict:
+    """Bulk field upload: enrich and auto-tag every frame in one request.
+
+    Requires ``mrv:field_upload`` -- the scope that exists for exactly this.
+    The caller's scope is not recorded: this endpoint ingests, it does not
+    verify. Verification is ``/triage/evaluate``'s job under
+    ``mrv:triage_review``.
+    """
+    if not S3_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Enrichment unavailable (needs OpenCV).")
+    if not files:
+        raise HTTPException(status_code=422, detail="At least one file is required.")
+    if len(files) > INGEST_MAX_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{len(files)} files exceeds the per-batch limit of {INGEST_MAX_FILES}.",
+        )
+
+    context = {
+        "project_id": project_id,
+        "milestone_phase": milestone_phase,
+        "sustainability_domain": sustainability_domain,
+    }
+
+    items: list[dict] = []
+    for f in files:
+        name = (f.filename or "unnamed").strip() or "unnamed"
+        try:
+            data = await f.read()
+        except Exception as exc:  # noqa: BLE001 - one bad stream must not sink the batch
+            items.append({"filename": name, "status": "REJECTED",
+                          "tags": [], "error": f"read failed: {exc}"})
+            continue
+        items.append(_ingest_one(name, data, context))
+
+    ingested = [i for i in items if i["status"] == "INGESTED"]
+    rejected = [i for i in items if i["status"] == "REJECTED"]
+    tag_counts: dict[str, int] = {}
+    for item in ingested:
+        for tag in item["tags"]:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    return {
+        "project_id": project_id,
+        "milestone_phase": milestone_phase,
+        "sustainability_domain": sustainability_domain,
+        "requested": len(items),
+        "ingested": len(ingested),
+        "rejected": len(rejected),
+        "partial": bool(rejected) and bool(ingested),
+        "tag_counts": dict(sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "items": items,
+        "note": (
+            "Ingest records evidence. It does not verify it -- use "
+            "/triage/evaluate under mrv:triage_review for a verdict."
+        ),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Stage 5.6 — project report
+# --------------------------------------------------------------------------- #
+
+
+def _report_figures(project_id: str) -> dict:
+    """Carbon figures for a report, computed exactly as the dossier does.
+
+    Deliberately the same inputs and the same calls as ``/audit/dossier``: a
+    report and a dossier that quote different numbers for one project is the kind
+    of defect that only surfaces during an audit, and both are built from the
+    same function so they cannot drift.
+    """
+    from services.biomass_service import (
+        apply_vm0047_uncertainty_discount,
+        calculate_allometric_carbon,
+    )
+
+    biomass = calculate_allometric_carbon(
+        canopy_area_m2=11.29,
+        mean_height_m=3.9,
+        wood_density_g_cm3=0.45,
+        species_name="Rhizophora mucronata",
+        measured_dbh_cm=6.8,
+        stand_area_ha=1.0,
+        stems_per_hectare=1100,
+    )
+    discount = apply_vm0047_uncertainty_discount(
+        gross_tco2e=biomass.co2e_metric_tons, sampling_error_pct=8.7
+    )
+    return {
+        "project_name": "Kilifi Community Mangrove Restoration",
+        "region": "Kilifi, Kenya",
+        "net_tco2e_per_ha": discount.net_certified_tco2e,
+        "sampling_ci90_pct": 8.7,
+        # Placeholder root hash: fixture mode has no real C2PA chain to hash.
+        # Reported as such rather than presented as a measured digest.
+        "root_hash": "sha256:UNAVAILABLE_IN_FIXTURE_MODE",
+    }
+
+
+@app.get("/v1/projects/{project_id}/report")
+@app.get("/api/v1/projects/{project_id}/report")
+def project_report(project_id: str) -> dict:
+    """Statutory report: dossier figures, a vector PDF URL, and a scannable QR.
+
+    Public because the report is a filing artefact and its contents are already
+    public via provenance. Signing a report is a different act, under
+    ``mrv:vvb_signoff``, and is not this route.
+    """
+    from services.report_service import ReportError, build_report
+
+    figures = _report_figures(project_id)
+    try:
+        report = build_report(
+            project_id=project_id,
+            project_name=figures["project_name"],
+            region=figures["region"],
+            net_tco2e_per_ha=figures["net_tco2e_per_ha"],
+            sampling_ci90_pct=figures["sampling_ci90_pct"],
+            root_hash=figures["root_hash"],
+            cloud_name=(get_settings().cloudinary_cloud_name or "demo-cloud"),
+            app_url=get_settings().app_url,
+            warped_public_id=f"projects/{project_id}/warped_baseline",
+        )
+    except ReportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    report["mode"] = "FIXTURE" if not get_settings().has_cloudinary_credentials else "LIVE"
+    report["caveat"] = (
+        "root_hash is a fixture placeholder. No Cloudinary call and no C2PA chain "
+        "is exercised in fixture mode; run scripts/validate_cloudinary_live.py to "
+        "replace it with a measured digest."
+    )
+    return report

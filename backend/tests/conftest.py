@@ -391,3 +391,21 @@ def deterministic_cv_rng():
 
     cv2.setRNGSeed(0)
     yield
+
+
+@pytest.fixture(scope="module")
+def anon_client():
+    """An unauthenticated TestClient, for asserting the 401/403 paths."""
+    import mock_server
+    from fastapi.testclient import TestClient
+
+    return TestClient(mock_server.app)
+
+
+@pytest.fixture(scope="module")
+def client(auth_headers):
+    """Authenticated TestClient. Default headers carry a verified token."""
+    import mock_server
+    from fastapi.testclient import TestClient
+
+    return TestClient(mock_server.app, headers=auth_headers)
