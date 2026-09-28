@@ -13,6 +13,7 @@
  *   3. Compare before-and-after          -> ProofOfImpactStudio
  */
 
+import PortfolioGrid from "@/components/PortfolioGrid";
 import ProvenancePanel from "@/components/ProvenancePanel";
 
 type Stage = {
@@ -104,6 +105,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* Rubric bullet 1 — bulk-organized evidence at a glance. */}
+      <PortfolioGrid />
 
       {/* Rubric bullet 6 — the first real Stage 6 component on the page. */}
       <ProvenancePanel />

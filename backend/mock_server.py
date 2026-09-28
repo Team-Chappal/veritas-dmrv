@@ -1187,3 +1187,104 @@ def project_report(project_id: str) -> dict:
         "replace it with a measured digest."
     )
     return report
+
+
+# --------------------------------------------------------------------------- #
+# Asset listing (rubric bullet 1 — organize large collections)
+# --------------------------------------------------------------------------- #
+
+#: A page is capped so one request cannot ask for all 520. Uncapped listing is
+#: how a 520-asset corpus becomes an unusable 40 MB response in a browser.
+ASSET_PAGE_MAX = 200
+
+
+@app.get("/v1/assets")
+@app.get("/api/v1/assets")
+def list_assets(
+    project_id: Optional[str] = None,
+    phase: Optional[str] = None,
+    decision: Optional[str] = None,
+    domain: Optional[str] = None,
+    tag: Optional[str] = None,
+    c2pa: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 60,
+    offset: int = 0,
+) -> dict:
+    """List corpus assets with the filters a reviewer actually uses.
+
+    Sorted by capture time descending, so the most recent evidence is first and
+    an empty result is more likely to be a real gap than a page boundary.
+    """
+    limit = max(1, min(int(limit), ASSET_PAGE_MAX))
+    offset = max(0, int(offset))
+
+    rows = list(_corpus())
+    if project_id:
+        rows = [r for r in rows if r["esg_project_id"] == project_id]
+    if phase:
+        rows = [r for r in rows if r["milestone_phase"] == phase]
+    if decision:
+        rows = [r for r in rows if r["jev_triage_decision"] == decision]
+    if domain:
+        rows = [r for r in rows if r["sustainability_domain"] == domain]
+    if tag:
+        rows = [r for r in rows if tag in (r.get("tags") or [])]
+    if c2pa:
+        rows = [r for r in rows if r["c2pa_provenance"] == c2pa]
+    if q:
+        needle = q.strip().lower()
+        rows = [
+            r for r in rows
+            if needle in r["public_id"].lower()
+            or any(needle in str(t).lower() for t in (r.get("tags") or []))
+        ]
+
+    rows.sort(key=lambda r: r["capture_timestamp"], reverse=True)
+
+    # Facet counts come from the FILTERED set, so the chips tell a reviewer what
+    # switching to a filter would actually yield rather than the whole corpus.
+    facets = {
+        "decision": {},
+        "phase": {},
+        "c2pa": {},
+        "domain": {},
+    }
+    for r in rows:
+        for key, field in (
+            ("decision", "jev_triage_decision"),
+            ("phase", "milestone_phase"),
+            ("c2pa", "c2pa_provenance"),
+            ("domain", "sustainability_domain"),
+        ):
+            value = r.get(field)
+            if value:
+                facets[key][value] = facets[key].get(value, 0) + 1
+
+    return {
+        "mode": "MOCK",
+        "total_matched": len(rows),
+        "returned": min(limit, max(0, len(rows) - offset)),
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < len(rows),
+        "facets": {k: dict(sorted(v.items(), key=lambda kv: (-kv[1], kv[0])))
+                   for k, v in facets.items()},
+        "assets": [
+            {
+                "asset_id": r["asset_id"],
+                "public_id": r["public_id"],
+                "esg_project_id": r["esg_project_id"],
+                "milestone_phase": r["milestone_phase"],
+                "sustainability_domain": r["sustainability_domain"],
+                "capture_timestamp": r["capture_timestamp"],
+                "media_type": r["media_type"],
+                "jev_triage_decision": r["jev_triage_decision"],
+                "jev_confidence_score": r["jev_confidence_score"],
+                "c2pa_provenance": r["c2pa_provenance"],
+                "canopy_delta_pct": r.get("canopy_delta_pct"),
+                "tags": r.get("tags") or [],
+            }
+            for r in rows[offset : offset + limit]
+        ],
+    }
