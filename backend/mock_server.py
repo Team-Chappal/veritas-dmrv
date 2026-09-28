@@ -51,7 +51,16 @@ from typing import Any, Optional
 # exposes are pure and are the Stage 4 deliverable.
 from core.cloudinary_client import CloudinaryClient, validate_public_id
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -123,6 +132,58 @@ from core.rate_limit import register as _register_rate_limiter  # noqa: E402
 
 _register_rate_limiter(app)
 
+# S5.8 authentication. Imported here rather than beside the routes that use it
+# because the exception handlers below are registered before those routes.
+from core.auth import (  # noqa: E402
+    SCOPE_FIELD_UPLOAD,
+    SCOPE_TRIAGE_REVIEW,
+    AuthConfigurationError,
+    InsufficientScope,
+    TokenError,
+    Principal,
+    ROLE_SCOPES,
+    Principal,
+    auth_state,
+    authorise,
+    enforce_scope,
+    issue_token,
+    principal_from_header,
+)
+from core.config import get_settings  # noqa: E402
+
+# --------------------------------------------------------------------------- #
+# Auth: 401 / 403 / 503 mapping (S5.8)
+# --------------------------------------------------------------------------- #
+
+#: Which scope each mutating route requires. Read-only routes stay public.
+SCOPE_FOR_ROUTE = {
+    "/triage/evaluate": SCOPE_TRIAGE_REVIEW,
+    "/cv/align-and-diff": SCOPE_TRIAGE_REVIEW,
+    "/media/ingest": SCOPE_FIELD_UPLOAD,
+}
+
+
+@app.exception_handler(TokenError)
+async def _auth_token_error(request: Request, exc: TokenError) -> JSONResponse:
+    # RFC 6750: a 401 tells the client how to authenticate.
+    return JSONResponse(
+        status_code=401,
+        content={"error": "unauthorized", "detail": str(exc)},
+        headers={"WWW-Authenticate": 'Bearer realm="veritas-field"'},
+    )
+
+
+@app.exception_handler(InsufficientScope)
+async def _auth_scope_error(request: Request, exc: InsufficientScope) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"error": "forbidden", "detail": str(exc)})
+
+
+@app.exception_handler(AuthConfigurationError)
+async def _auth_config_error(request: Request, exc: AuthConfigurationError) -> JSONResponse:
+    """Fail CLOSED. 503 rather than 401: retrying with a token will not help."""
+    return JSONResponse(status_code=503, content={"error": "auth_unavailable", "detail": str(exc)})
+
+
 DECISION_PASS = "VERIFIED_PASS"
 DECISION_REVIEW = "REVIEW_AMBIGUOUS"
 DECISION_FRAUD = "QUARANTINE_FRAUD"
@@ -160,6 +221,7 @@ class TriageRequest(BaseModel):
 
 @app.get("/health")
 @app.get("/v1/health")
+@app.get("/api/v1/health")
 def health() -> dict:
     return {
         "status": "ONLINE",
@@ -214,6 +276,7 @@ def _solar_position(latitude: float, longitude: float, ts: datetime) -> dict:
 def triage_evaluate(
     payload: TriageRequest,
     x_mock_scenario: Optional[str] = Header(default=None, alias="X-Mock-Scenario"),
+    _principal: Principal = Depends(enforce_scope(SCOPE_TRIAGE_REVIEW)),
 ) -> dict:
     """Forensic triage. Uses the real solar service when available.
 
@@ -326,6 +389,7 @@ async def align_and_diff(
     baseline_image: UploadFile = File(...),
     progress_image: UploadFile = File(...),
     project_id: str = Form("KEN-042"),
+    _principal: Principal = Depends(enforce_scope(SCOPE_TRIAGE_REVIEW)),
 ) -> dict:
     """Register the pair and measure canopy change.
 
@@ -562,7 +626,10 @@ def _demo_index_documents() -> list:
 
 @app.post("/v1/media/analyse")
 @app.post("/api/v1/media/analyse")
-async def analyse_media(image: UploadFile = File(...)) -> dict:
+async def analyse_media(
+    image: UploadFile = File(...),
+    _principal: Principal = Depends(enforce_scope(SCOPE_TRIAGE_REVIEW)),
+) -> dict:
     """Auto-tag a single asset from its pixels (rubric bullet 2).
 
     Returns the tags AND the measurements behind them, so a reviewer can check
@@ -637,6 +704,8 @@ def search(
 
 
 @app.get("/v1/projects/{project_id}/summary")
+@app.post("/v1/projects/{project_id}/summary")
+@app.get("/api/v1/projects/{project_id}/summary")
 @app.post("/api/v1/projects/{project_id}/summary")
 def project_summary(project_id: str) -> dict:
     """Grounded project summary (rubric bullet 4)."""
@@ -658,13 +727,42 @@ def project_summary(project_id: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Development token minting (S5.8)
+# --------------------------------------------------------------------------- #
+
+# Registered ONLY outside production. A token endpoint is a full authentication
+# bypass, so in production this route does not exist and the answer is 404 --
+# a real deployment terminates OIDC in front of the app instead.
+if not get_settings().is_production:
+
+    @app.post("/v1/auth/dev-token")
+    @app.post("/api/v1/auth/dev-token")
+    async def dev_token(role: str = "triage") -> JSONResponse:
+        """Mint a demo token. Development only; see the guard above."""
+        if role not in ROLE_SCOPES:
+            # 400, not 500: an unknown role is a client mistake, and a 500 here
+            # would look like the auth service is broken.
+            return JSONResponse(
+                status_code=400,
+                content={"error": "unknown_role", "known_roles": sorted(ROLE_SCOPES)},
+            )
+        token = issue_token(role, subject=f"dev-{role}@veritas.local")
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "scope": token,
+            "role": role,
+            "warning": "Development-only token from a demo issuer. Do not use in production.",
+        }
+
+
+# --------------------------------------------------------------------------- #
 # Cloudinary webhooks
 # --------------------------------------------------------------------------- #
 
 #: Built with the webhook secret when configured. Without one the processor
 #: ACCEPTS unverified notifications — degraded for the demo, and the health
 #: endpoint below says so plainly.
-from core.auth import auth_state  # noqa: E402
 from services.webhook_service import (  # noqa: E402
     WebhookAction,
     WebhookProcessor,

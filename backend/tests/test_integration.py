@@ -133,7 +133,16 @@ class TestConfigDegradation:
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(auth_headers):
+    """Authenticated by default. Tests for 401/403 use ``anon_client``."""
+    import mock_server
+
+    return TestClient(mock_server.app, headers=auth_headers)
+
+
+@pytest.fixture(scope="module")
+def anon_client():
+    """No credentials at all — for asserting the unauthenticated path."""
     import mock_server
 
     return TestClient(mock_server.app)
@@ -620,3 +629,123 @@ class TestMockWebhookRoute:
             headers={"content-type": "application/json"},
         )
         assert r.status_code in (400, 422)
+
+
+class TestRouteScopeEnforcement:
+    """Authorisation tested THROUGH FastAPI, not by calling the dependency.
+
+    The unit tests in test_auth.py call the dependency as a plain function, so
+    they cannot see how FastAPI binds its parameters. That gap was real: the
+    dependency annotated ``authorization: str | None = None``, which FastAPI
+    binds as a QUERY parameter, so a valid bearer header was ignored and every
+    protected route returned 401. The unit tests passed throughout. Only a
+    request through the app catches that class of bug.
+    """
+
+    PROTECTED = [
+        ("post", "/api/v1/triage/evaluate", {}),
+        ("post", "/api/v1/media/analyse", {}),
+        ("post", "/api/v1/cv/align-and-diff", {}),
+    ]
+
+    def test_protected_routes_reject_anonymous(self, anon_client):
+        for method, path, kwargs in self.PROTECTED:
+            r = getattr(anon_client, method)(path, **kwargs)
+            assert r.status_code in (401, 422), f"{path} -> {r.status_code}"
+            if r.status_code == 401:
+                assert r.headers.get("WWW-Authenticate", "").startswith("Bearer")
+
+    def test_forged_token_rejected(self, anon_client):
+        for method, path, kwargs in self.PROTECTED:
+            r = getattr(anon_client, method)(
+                path, headers={"Authorization": "Bearer forged.jwt.value"}, **kwargs
+            )
+            assert r.status_code == 401, f"{path} -> {r.status_code}"
+
+    def test_401_body_does_not_leak_the_token(self, anon_client):
+        r = anon_client.post("/api/v1/triage/evaluate", json={})
+        assert "eyJ" not in r.text
+
+    def test_wrong_role_is_403_not_401(self, anon_client, token_for):
+        """403 means 'ask for a different role'; 401 would send it round again."""
+        r = anon_client.post(
+            "/api/v1/triage/evaluate", json={}, headers=token_for("field")
+        )
+        assert r.status_code == 403
+        assert "mrv:triage_review" in r.json()["detail"]
+
+    def test_vvb_signoff_does_not_inherit_triage(self, anon_client, token_for):
+        """The no-escalation rule, end to end."""
+        r = anon_client.post(
+            "/api/v1/triage/evaluate", json={}, headers=token_for("vvb")
+        )
+        assert r.status_code == 403
+
+    def test_correct_role_passes_authorisation(self, anon_client, token_for):
+        """422 proves the request got PAST auth and was rejected on its body."""
+        r = anon_client.post("/api/v1/triage/evaluate", json={}, headers=token_for("triage"))
+        assert r.status_code == 422
+
+    def test_read_only_routes_stay_public(self, anon_client):
+        """Over-restricting reads would break the demo for no security gain."""
+        for path in ("/health", "/api/v1/schema", "/api/v1/search?q=forest"):
+            assert anon_client.get(path).status_code in (200, 422, 503), path
+
+    def test_webhook_route_stays_bearer_free(self, anon_client):
+        """Cloudinary cannot send a bearer token; it signs the body instead.
+
+        Adding bearer auth here would turn every real notification into a 401
+        and the delivery would never be retried, so the gap looks like success.
+        """
+        r = anon_client.post("/v1/cloudinary-webhooks/notify", json={
+            "notification_type": "eager", "public_id": "a/b", "eager": [],
+        })
+        assert r.status_code != 401
+
+    def test_dev_token_endpoint_mints_a_usable_token(self, anon_client):
+        r = anon_client.post("/v1/auth/dev-token?role=triage")
+        assert r.status_code == 200
+        token = r.json()["access_token"]
+        assert "warning" in r.json()
+
+        use = anon_client.post(
+            "/api/v1/triage/evaluate", json={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert use.status_code == 422, "a minted token must actually verify"
+
+    def test_dev_token_rejects_an_unknown_role(self, anon_client):
+        """A client mistake is a 400. A 500 would read as a broken auth service."""
+        r = anon_client.post("/v1/auth/dev-token?role=admin")
+        assert r.status_code == 400
+        assert r.json()["known_roles"] == ["field", "triage", "vvb"]
+
+
+class TestAliasConsistency:
+    """Every route answers on both /v1 and /api/v1, for every method it has.
+
+    The aliasing was applied per-route by hand and had drifted: GET existed on
+    /v1 but POST on /api/v1, so a client that switched prefixes silently lost a
+    method. The table below is the contract.
+    """
+
+    def test_summary_exists_as_get_on_both_prefixes(self, anon_client):
+        for path in ("/v1/projects/KEN-042/summary", "/api/v1/projects/KEN-042/summary"):
+            r = anon_client.get(path)
+            assert r.status_code in (200, 503), f"{path} -> {r.status_code}"
+
+    def test_both_prefixes_expose_the_same_routes_and_methods(self, anon_client):
+        import mock_server
+
+        def surface(prefix):
+            found = set()
+            for route in mock_server.app.routes:
+                if not route.path.startswith(f"{prefix}/"):
+                    continue
+                suffix = route.path[len(prefix):]
+                for m in getattr(route, "methods", set()) - {"HEAD", "OPTIONS"}:
+                    found.add((m, suffix))
+            return found
+
+        v1, api = surface("/v1"), surface("/api/v1")
+        assert v1 == api, f"prefix drift: only /v1 {v1 - api}, only /api/v1 {api - v1}"

@@ -9,6 +9,7 @@ a test that will fail on stage.
 from __future__ import annotations
 
 import os
+from typing import Callable
 
 # Rate limiting is configured at 60/min, which a suite making hundreds of
 # requests would blow through -- and a global counter shared across tests would
@@ -322,3 +323,37 @@ def canopy_growth_pair():
     baseline = make_soil_scene(canopy_fraction=0.12, seed=3)
     progress = make_soil_scene(canopy_fraction=0.20, seed=3, brightness=0.65)
     return {"baseline": baseline, "progress": progress}
+
+
+# --------------------------------------------------------------------------- #
+# Authenticated test client (S5.8)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture(scope="session")
+def auth_headers() -> dict:
+    """A real, verified triage token as default request headers.
+
+    Deliberately a genuine token rather than a mock: the suite exercises the
+    same verification path a field client would, so an auth regression fails
+    here instead of on deployment. Tests that assert 401/403 behaviour build
+    their own clients WITHOUT these headers.
+    """
+    from core.auth import issue_token
+    from core.config import get_settings
+
+    token = issue_token("triage", subject="pytest@veritas.local", settings=get_settings())
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(scope="session")
+def token_for() -> Callable[[str], dict]:
+    """Build auth headers for a named role: ``token_for("vvb")``."""
+    from core.auth import issue_token
+    from core.config import get_settings
+
+    def _make(role: str) -> dict:
+        token = issue_token(role, subject=f"pytest-{role}@veritas.local", settings=get_settings())
+        return {"Authorization": f"Bearer {token}"}
+
+    return _make

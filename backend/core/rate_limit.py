@@ -57,6 +57,10 @@ log = logging.getLogger(__name__)
 #: Below this many requests a minute, tests raise the ceiling; see module docstring.
 _TEST_CEILING = 100_000
 
+#: How long each limit granularity takes to refill, in seconds. This is the
+#: window a Retry-After should advertise.
+_GRANULARITY_SECONDS = {"second": 1, "minute": 60, "hour": 3600, "day": 86400}
+
 
 def client_identity(request: Request) -> str:
     """Bucket key: verified subject, else the peer's address.
@@ -115,14 +119,21 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
     )
 
 
-def _retry_after_seconds(exc: RateLimitExceeded, window: int = 60) -> int:
-    limit = getattr(getattr(exc, "limit", None), "limit", None)
-    if limit is not None:
-        multiplier = getattr(limit, "multiplier", None)
-        amount = getattr(multiplier, "amount", None)
-        if amount:
-            window = int(amount)
-    return max(1, int(window))
+def _retry_after_seconds(exc: RateLimitExceeded, default_window: int = 60) -> int:
+    """Seconds until the bucket refills, from the limit's own granularity.
+
+    Read from ``GRANULARITY`` rather than from ``amount``: ``amount`` is the
+    request BUDGET (5), not the window (60s for "5/minute"). An earlier version
+    conflated the two and so reported 60s for every window, which was right only
+    because the shipped limit happens to be per-minute.
+    """
+    item = getattr(getattr(exc, "limit", None), "limit", None)
+    granularity = getattr(item, "GRANULARITY", None)
+    if granularity is not None:
+        seconds = _GRANULARITY_SECONDS.get(str(getattr(granularity, "name", granularity)))
+        if seconds:
+            return seconds
+    return max(1, int(default_window))
 
 
 def register(app: FastAPI) -> FastAPI:
