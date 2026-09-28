@@ -275,3 +275,41 @@ class TestPercentileHelper:
 
     def test_median_helper_available(self):
         assert statistics.median([1, 3, 2]) == 2
+
+
+class TestFrontendThresholdDuplication:
+    """The inlier-ratio thresholds are duplicated in TypeScript. Keep them honest.
+
+    `frontend/lib/impact.ts` carries its own copy of the floor and target so the
+    slider can render a verdict without a round trip. A duplicated constant is a
+    constant that will drift, and a slider that disagrees with the backend about
+    when a registration is trustworthy is worse than no verdict at all.
+
+    This reads the TypeScript source rather than hardcoding the values again, so
+    the assertion is about AGREEMENT, not about a third copy of 0.6.
+    """
+
+    @staticmethod
+    def _ts_constant(name: str) -> float:
+        import re
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parents[2] / "frontend" / "lib" / "impact.ts"
+        assert src.exists(), f"frontend threshold source missing: {src}"
+        m = re.search(rf"export const {name} = ([0-9.]+);", src.read_text())
+        assert m, f"{name} not found in impact.ts"
+        return float(m.group(1))
+
+    def test_floor_matches_the_backend(self):
+        from core.config import get_settings
+
+        assert self._ts_constant("INLIER_RATIO_FLOOR") == get_settings().sift_inlier_ratio_floor
+
+    def test_target_matches_the_backend(self):
+        from core.config import get_settings
+
+        assert self._ts_constant("INLIER_RATIO_TARGET") == get_settings().sift_inlier_ratio_target
+
+    def test_target_is_above_floor(self):
+        """Otherwise the middle verdict band is empty and unreachable."""
+        assert self._ts_constant("INLIER_RATIO_TARGET") > self._ts_constant("INLIER_RATIO_FLOOR")
