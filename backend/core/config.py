@@ -40,6 +40,24 @@ class Settings:
         default_factory=lambda: _env("C2PA_SIGNING_PRIVATE_KEY")
     )
 
+    # --- Authentication (Stage 5) -------------------------------------------
+    # NOTE the deliberate asymmetry with Cloudinary: a missing Cloudinary key
+    # degrades to fixtures, but a missing JWT key must NOT degrade to
+    # unauthenticated access. See core/auth.py — protected routes fail CLOSED.
+    jwt_secret: str | None = field(default_factory=lambda: _env("VERITAS_JWT_SECRET"))
+    jwt_issuer: str = field(default_factory=lambda: _env("JWT_ISSUER", default="veritas-dmrv"))
+    jwt_audience: str = field(
+        default_factory=lambda: _env("JWT_AUDIENCE", default="veritas-field")
+    )
+    #: 8h — one field shift. A VVB sign-off token should not outlive the day.
+    jwt_ttl_seconds: int = field(
+        default_factory=lambda: int(_env("JWT_TTL_SECONDS", default="28800") or 28800)
+    )
+    #: Spec S5.8: 60 req/min. Read at call time so a test can lower it.
+    rate_limit_per_minute: int = field(
+        default_factory=lambda: int(_env("RATE_LIMIT_PER_MINUTE", default="60") or 60)
+    )
+
     demo_cache_enabled: bool = field(
         default_factory=lambda: (_env("DEMO_CACHE_ENABLED", default="true") or "").lower()
         in {"1", "true", "yes", "on"}
@@ -65,6 +83,10 @@ class Settings:
     def mode(self) -> str:
         return "live" if self.has_cloudinary_credentials else "fixture"
 
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() in {"production", "prod"}
+
     def public_summary(self) -> dict:
         """Safe to log. Never contains a secret value."""
         return {
@@ -74,6 +96,9 @@ class Settings:
             "cloud_name": self.cloudinary_cloud_name or "<unset>",
             "c2pa_signing_configured": bool(self.c2pa_signing_private_key),
             "demo_cache_enabled": self.demo_cache_enabled,
+            # Booleans only — the secret itself is never summarised.
+            "jwt_signing_key_configured": bool(self.jwt_secret),
+            "rate_limit_per_minute": self.rate_limit_per_minute,
         }
 
 

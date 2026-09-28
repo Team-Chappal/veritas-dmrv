@@ -14,4 +14,5 @@ markers = [
   "tier2: computer vision and photogrammetry (requires OpenCV)",
   "tier3: integration and webhooks",
   "tier4: end-to-end browser flows",
+  "tier5: authentication, authorisation and rate limiting",
 ]

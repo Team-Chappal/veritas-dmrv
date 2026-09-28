@@ -32,6 +32,11 @@ cloudinary==1.41.0
 imagehash==4.3.1
 Pillow==10.4.0
 
+# --- Authentication & rate limiting ------------------------------------------
+# cp313 wheels verified present for both; no floor relaxation needed.
+PyJWT==2.10.1
+slowapi==0.1.9
+
 # --- Testing ----------------------------------------------------------------
 pytest==8.3.3
 pytest-cov==5.0.0

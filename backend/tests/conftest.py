@@ -8,6 +8,15 @@ a test that will fail on stage.
 
 from __future__ import annotations
 
+import os
+
+# Rate limiting is configured at 60/min, which a suite making hundreds of
+# requests would blow through -- and a global counter shared across tests would
+# make unrelated tests fail by execution order. Raise the ceiling before any
+# project import reads settings; enforcement is proven at a low limit in
+# test_rate_limit.py instead.
+os.environ.setdefault("RATE_LIMIT_PER_MINUTE", "100000")
+
 import datetime as dt
 import json
 import sys
