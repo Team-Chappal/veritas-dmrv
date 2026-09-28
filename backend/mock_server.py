@@ -132,6 +132,11 @@ from core.rate_limit import register as _register_rate_limiter  # noqa: E402
 
 _register_rate_limiter(app)
 
+# S5 exit criterion: every JSON response carries a provenance block.
+from core.provenance import register as _register_provenance  # noqa: E402
+
+_register_provenance(app)
+
 # S5.8 authentication. Imported here rather than beside the routes that use it
 # because the exception handlers below are registered before those routes.
 from core.auth import (  # noqa: E402
@@ -1101,6 +1106,10 @@ async def ingest_media(
 # --------------------------------------------------------------------------- #
 
 
+#: _corpus() is the single cached accessor, defined alongside the other
+#: Cloudinary-corpus helpers. A second copy here shadowed it and, because the
+#: module-level cache starts as [] rather than None, its `is None` check never
+#: fired -- so every project lookup 404'd and _pick() indexed an empty list.
 def _report_figures(project_id: str) -> dict:
     """Carbon figures for a report, computed exactly as the dossier does.
 
@@ -1147,6 +1156,13 @@ def project_report(project_id: str) -> dict:
     ``mrv:vvb_signoff``, and is not this route.
     """
     from services.report_service import ReportError, build_report
+
+    # An unknown project must 404 rather than receive a report built from
+    # invented figures. A filing artefact carrying fabricated carbon numbers is
+    # worse than no filing artefact, and /campaign already behaves this way.
+    known = {a["esg_project_id"] for a in _corpus()}
+    if project_id not in known:
+        raise HTTPException(status_code=404, detail=f"Unknown project {project_id}")
 
     figures = _report_figures(project_id)
     try:
