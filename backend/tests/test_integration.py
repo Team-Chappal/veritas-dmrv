@@ -505,3 +505,62 @@ class TestMockEnrichmentRoutes:
     def test_analyse_rejects_empty_upload(self, client):
         r = client.post("/v1/media/analyse", files={"image": ("a.png", b"", "image/png")})
         assert r.status_code == 422
+
+
+class TestMockCloudinaryRoutes:
+    """Stage 4 surfaces: campaign content, provenance, schema status."""
+
+    def test_campaign_returns_all_four_content_urls(self, client):
+        r = client.get("/v1/projects/KEN-008/campaign").json()
+        content = r["content"]
+        for key in (
+            "split_diff_url", "donor_reel_9x16_url",
+            "impact_certificate_url", "audit_dossier_pdf_url",
+        ):
+            assert key in content, key
+            assert content[key].startswith("https://res.cloudinary.com/"), key
+
+    def test_campaign_content_is_live_even_without_credentials(self, client):
+        """URL composition is pure, so it must not be stubbed.
+
+        The assets behind the URLs need an account; the URLs themselves are the
+        Cloudinary integration doing the work and are available regardless.
+        """
+        r = client.get("/v1/projects/KEN-008/campaign").json()
+        assert r["assets_resolved"] is False
+        assert "composed locally and are always live" in r["note"]
+
+    def test_campaign_reel_is_vertical_with_a_preview_slice(self, client):
+        import urllib.parse
+
+        u = client.get("/v1/projects/KEN-008/campaign").json()["content"]["donor_reel_9x16_url"]
+        d = urllib.parse.unquote(u)
+        assert "ar_9:16" in d
+        assert "e_preview:duration_12" in d
+
+    def test_campaign_404s_for_an_unknown_project(self, client):
+        assert client.get("/v1/projects/NOPE-999/campaign").status_code == 404
+
+    def test_provenance_reports_master_and_hash(self, client):
+        p = client.get(
+            "/v1/assets/impact_evidence/KEN-008/baseline_month_0/a0000/provenance"
+        ).json()
+        assert p["public_id"].endswith("a0000")
+        assert p["content_hash"]["algorithm"] == "SHA-256"
+        assert p["c2pa_provenance"] in {
+            "C2PA_VERIFIED", "C2PA_MISSING", "C2PA_MUTATED"
+        }
+        assert p["transformation_log_live"] is False, "must admit the log is stubbed"
+        assert p["note"]
+
+    def test_provenance_rejects_a_malformed_public_id(self, client):
+        r = client.get("/v1/assets/bad%22id/provenance")
+        assert r.status_code in (422, 500)
+
+    def test_schema_status_reports_fingerprint_and_stub_state(self, client):
+        s = client.get("/v1/schema").json()
+        assert s["field_count"] == 11
+        assert len(s["fingerprint"]) == 16
+        assert s["registered_live"] is False
+        assert "not configured" in s["note"]
+        assert len(s["fields"]) == 11
