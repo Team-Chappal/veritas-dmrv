@@ -17,6 +17,30 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _load_env_files() -> None:
+    """Load ``backend/.env`` (and ``.env``) if present.
+
+    ``.env.example`` has always told people to copy it to ``backend/.env``, but
+    nothing loaded it, so a carefully filled-in file did nothing at all and the
+    app sat in fixture mode with no obvious reason. ``override=False`` keeps a
+    real environment variable winning over the file, so CI and the shell still
+    take precedence.
+
+    Fails silently if python-dotenv is not installed: credentials are optional
+    and a missing convenience must not break a stage demo.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:  # pragma: no cover - dotenv is pinned in requirements
+        return
+    for candidate in (REPO_ROOT / "backend" / ".env", REPO_ROOT / ".env"):
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+
+
+_load_env_files()
+
+
 def _env(*names: str, default: str | None = None) -> str | None:
     for n in names:
         v = os.getenv(n)
