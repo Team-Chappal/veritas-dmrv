@@ -14,6 +14,7 @@
  */
 
 import PortfolioGrid from "@/components/PortfolioGrid";
+import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
 import SemanticSearch from "@/components/SemanticSearch";
 import ProvenancePanel from "@/components/ProvenancePanel";
 
@@ -106,6 +107,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* Rubric bullet 3 — before/after, qualified by registration quality. */}
+      <ProofOfImpactStudio />
 
       {/* Rubric bullet 5 — search, with what it could not find. */}
       <SemanticSearch />
