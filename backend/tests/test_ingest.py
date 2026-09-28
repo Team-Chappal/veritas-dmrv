@@ -271,7 +271,10 @@ class TestIngestDoesNotVerify:
 
 
 class TestReportRoute:
-    URL = "/api/v1/projects/KEN-042/report"
+    # A real corpus project id. KEN-042 appears throughout the older routes as a
+    # demo placeholder, but the report route 404s on unknown projects on
+    # purpose, so using it here would assert 200 for the wrong reason.
+    URL = "/api/v1/projects/KEN-008/report"
 
     def test_is_public(self, anon_client):
         """A filing artefact is already public via provenance; signing is separate."""
@@ -279,7 +282,7 @@ class TestReportRoute:
 
     @pytest.mark.parametrize("prefix", ["/v1", "/api/v1"])
     def test_both_prefixes(self, anon_client, prefix):
-        assert anon_client.get(f"{prefix}/projects/KEN-042/report").status_code == 200
+        assert anon_client.get(f"{prefix}/projects/KEN-008/report").status_code == 200
 
     def test_carries_the_pdf_url_and_qr(self, anon_client):
         d = anon_client.get(self.URL).json()
@@ -304,7 +307,7 @@ class TestReportRoute:
         two routes continuing to share it.
         """
         report = anon_client.get(self.URL).json()["figures"]
-        dossier = anon_client.get("/api/v1/audit/dossier/KEN-042").json()
+        dossier = anon_client.get("/api/v1/audit/dossier/KEN-008").json()
         assert report["net_certified_tco2e_per_ha"] == \
             dossier["allometric_biomass_estimate"]["estimated_tco2e_per_hectare"]
 
@@ -318,8 +321,11 @@ class TestReportRoute:
         assert figures["sampling_ci90_pct"] < 15
         assert figures["net_certified_tco2e_per_ha"] > 0
 
-    def test_blank_project_id_is_422(self, anon_client):
-        assert anon_client.get("/api/v1/projects/%20/report").status_code == 422
+    def test_unknown_project_404s(self, anon_client):
+        assert anon_client.get("/api/v1/projects/NOPE-999/report").status_code == 404
+
+    def test_blank_project_id_is_rejected(self, anon_client):
+        assert anon_client.get("/api/v1/projects/%20/report").status_code in (404, 422)
 
     def test_response_is_json_serialisable(self, anon_client):
         import json

@@ -569,7 +569,14 @@ class TestMockWebhookRoute:
 
     Anyone who learns the URL can POST a fabricated payload, so this route must
     verify, deduplicate, and refuse to act on anything it cannot verify.
+
+    Depends on ``reset_webhook_state``: the app's dedup store is process-wide, so
+    without it these tests pass alone and fail in a full run.
     """
+
+    @pytest.fixture(autouse=True)
+    def _fresh(self, reset_webhook_state):
+        self.processor = reset_webhook_state
 
     def test_health_reports_signature_enforcement(self, client):
         caps = client.get("/health").json()["capabilities"]

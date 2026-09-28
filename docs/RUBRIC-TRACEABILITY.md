@@ -108,6 +108,33 @@ notifications** so the demo works. That is a deliberate, flagged degradation:
 `/health` reports `webhook_signature_enforced: false`, and the result's `reason`
 says verification was skipped.
 
+### 4. S5 exit criteria are now asserted, not claimed
+
+Two criteria, both executable so a later change fails CI instead of being
+noticed by whoever demos it next (`backend/tests/test_exit_criteria.py`):
+
+- **every response carries the provenance block** — `core/provenance.py`, applied
+  as middleware rather than a per-route helper, because a helper has to be
+  remembered and the criterion is that nobody forgets. In fixture mode the block
+  says the figures are synthetic and names the live-validation script.
+- **p95 on the compare route < 800 ms** — measured end to end through the app,
+  not just the service, because multipart parsing and serialisation are part of
+  what a user waits for.
+
+### 5. Auth is enforced on the mutating routes, and fails closed
+
+`core/auth.py` with `mrv:field_upload` / `mrv:triage_review` /
+`mrv:vvb_signoff`, mapped one-to-one onto roles with **no implicit escalation** —
+sign-off cannot upload, a field token cannot review. A missing signing key in
+production fails closed rather than degrading open, which is the opposite trade
+from every Cloudinary path in this codebase and is deliberate: a demo that runs
+unauthenticated is fine, a verification system that does so in production is a
+legal liability. `/health` reports the posture.
+
+The webhook route is deliberately **bearer-free**: Cloudinary cannot send a
+bearer token, it signs the body, and it does not retry a 401 — so bearer auth
+there would turn a gap into something that looks exactly like success.
+
 ---
 
 ## Where the "using Cloudinary" requirement is met

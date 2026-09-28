@@ -409,3 +409,23 @@ def client(auth_headers):
     from fastapi.testclient import TestClient
 
     return TestClient(mock_server.app, headers=auth_headers)
+
+
+@pytest.fixture()
+def reset_webhook_state():
+    """Clear the app's webhook dedup store.
+
+    ``_WEBHOOK_PROCESSOR`` is module-level, so its dedup dictionary is process
+    state: a test that posts a payload an earlier test already posted gets
+    DUPLICATE and fails, and the failure depends on execution order. Resetting
+    per test is the fix; making every test invent a unique public_id would only
+    move the collision to the next person who forgets.
+    """
+    import mock_server
+
+    processor = mock_server._WEBHOOK_PROCESSOR
+    processor._seen.clear()
+    processor.results.clear()
+    yield processor
+    processor._seen.clear()
+    processor.results.clear()
