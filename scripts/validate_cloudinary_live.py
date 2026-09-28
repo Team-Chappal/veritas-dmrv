@@ -52,6 +52,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
 
+# Importing core.config loads backend/.env, so the harness honours the same file
+# the app does rather than needing a hand-written export line.
+import core.config  # noqa: E402,F401
+
 import numpy as np  # noqa: E402
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
