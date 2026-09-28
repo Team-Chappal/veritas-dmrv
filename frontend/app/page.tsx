@@ -14,6 +14,7 @@
  */
 
 import PortfolioGrid from "@/components/PortfolioGrid";
+import SemanticSearch from "@/components/SemanticSearch";
 import ProvenancePanel from "@/components/ProvenancePanel";
 
 type Stage = {
@@ -105,6 +106,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* Rubric bullet 5 — search, with what it could not find. */}
+      <SemanticSearch />
 
       {/* Rubric bullet 1 — bulk-organized evidence at a glance. */}
       <PortfolioGrid />
