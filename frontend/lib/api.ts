@@ -17,6 +17,7 @@
 
 import { DEMO_ASSET_ID, DEMO_PROVENANCE, DEMO_REASON } from "./fixtures";
 import type { ProvenanceRecord, ProvenanceResult } from "./provenance";
+import type { SearchResponse } from "./search";
 
 /** Short by design: a stage demo on bad wifi should degrade, not hang. */
 export const REQUEST_TIMEOUT_MS = 4000;
@@ -142,6 +143,58 @@ export async function fetchAssets(
       reason: aborted
         ? `Backend did not respond within ${REQUEST_TIMEOUT_MS}ms. Showing bundled fixture collection. ${UNMEASURED}`
         : `Backend unreachable. Showing bundled fixture collection. ${UNMEASURED}`,
+    };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Search (rubric bullet 5)                                                  */
+/* -------------------------------------------------------------------------- */
+
+import { searchFixture } from "./search-fixture";
+import type { SearchResult } from "./search";
+
+export async function fetchSearch(
+  q: string,
+  k = 20,
+  signal?: AbortSignal
+): Promise<SearchResult> {
+  const params = new URLSearchParams({ q, k: String(k) });
+  const url = `${apiBase()}/api/v1/search?${params.toString()}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      return {
+        ...searchFixture(q, k),
+        reason: `Backend returned HTTP ${res.status}. Showing bundled fixture results. ${UNMEASURED}`,
+      };
+    }
+    const body = (await res.json()) as SearchResponse;
+    const block = body._provenance;
+    if (!block || block.mode === "fixture") {
+      return {
+        data: body,
+        source: "fixture",
+        reason: `${block?.caveat ?? block?.evidence ?? "No provenance block."} ${UNMEASURED}`,
+      };
+    }
+    return { data: body, source: "live", reason: "" };
+  } catch (err) {
+    const aborted = err instanceof Error && err.name === "AbortError";
+    return {
+      ...searchFixture(q, k),
+      reason: aborted
+        ? `Backend did not respond within ${REQUEST_TIMEOUT_MS}ms. Showing bundled fixture results. ${UNMEASURED}`
+        : `Backend unreachable. Showing bundled fixture results. ${UNMEASURED}`,
     };
   } finally {
     clearTimeout(timer);
