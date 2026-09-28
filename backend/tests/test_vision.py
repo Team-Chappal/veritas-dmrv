@@ -408,10 +408,20 @@ class TestRegistration:
         assert register_field_pair(None, soil_scene).status == RegistrationStatus.INVALID_INPUT
 
     def test_handles_differing_input_sizes(self, forest_pair):
+        """A half-width crop must either align or fail informatively.
+
+        ALIGNED_TPS_FALLBACK belongs in this set and was missing: it is a
+        SUCCESS status, reached when the homography is too weak to trust and the
+        registration falls back to a thin-plate spline. For a cropped pair that
+        is arguably the best available answer, so excluding it made the test
+        reject a good outcome. The real order-dependence behind this was OpenCV's
+        global RNG, now seeded per test in conftest.
+        """
         half = forest_pair["progress"][:, : forest_pair["progress"].shape[1] // 2]
         result = register_field_pair(forest_pair["baseline"], half)
         assert result.status in (
             RegistrationStatus.ALIGNED_HOMOGRAPHY,
+            RegistrationStatus.ALIGNED_TPS_FALLBACK,
             RegistrationStatus.INSUFFICIENT_SIFT_FEATURES,
             RegistrationStatus.LOW_INLIER_MATCH_COUNT,
         )

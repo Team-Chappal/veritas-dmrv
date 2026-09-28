@@ -37,6 +37,10 @@ Pillow==10.4.0
 PyJWT==2.10.1
 slowapi==0.1.9
 
+# --- Reporting (S5.6) -------------------------------------------------------
+# Pure-Python QR encoder: no compiled extension, so no cp313 wheel question.
+segno==1.6.1
+
 # --- Testing ----------------------------------------------------------------
 pytest==8.3.3
 pytest-cov==5.0.0
