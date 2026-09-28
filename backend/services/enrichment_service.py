@@ -145,6 +145,11 @@ BAND_YELLOW = (45.0, 75.0)    # yellow, dry grass
 BAND_GREEN = (75.0, 165.0)    # green through emerald
 BAND_CYAN = (165.0, 195.0)    # cyan, teal
 BAND_BLUE = (195.0, 270.0)    # blue
+#: The wheel is circular, so the remaining arc must be covered explicitly.
+#: Without it, magenta (300 deg) and violet (280 deg) fell outside every band
+#: and the per-band fractions silently summed to less than the saturated-pixel
+#: total, leaving the measurement quietly incomplete.
+BAND_MAGENTA = (270.0, 360.0)  # violet through magenta to red
 
 
 @dataclass
@@ -176,6 +181,7 @@ class ImageSignals:
     brown_fraction: float
     blue_fraction: float
     cyan_fraction: float
+    magenta_fraction: float
     water_fraction: float
     sky_fraction: float
     edge_density: float
@@ -253,6 +259,7 @@ def measure_image(image_rgb: np.ndarray) -> ImageSignals:
     brown_fraction = band_fraction(BAND_BROWN)
     blue_fraction = band_fraction(BAND_BLUE)
     cyan_fraction = band_fraction(BAND_CYAN)
+    magenta_fraction = band_fraction(BAND_MAGENTA)
 
     # Water: blue- or cyan-dominant, saturated enough to not be haze, and SMOOTH
     # -- specular highlights on still water are locally flat, which is what
@@ -312,6 +319,7 @@ def measure_image(image_rgb: np.ndarray) -> ImageSignals:
         brown_fraction=brown_fraction,
         blue_fraction=blue_fraction,
         cyan_fraction=cyan_fraction,
+        magenta_fraction=magenta_fraction,
         water_fraction=water_fraction,
         sky_fraction=sky_fraction,
         edge_density=edge_density,
@@ -352,9 +360,12 @@ def _pixel_tags(s: ImageSignals) -> list:
     if s.brown_fraction > 0.30 and s.canopy_cover < 0.20:
         add(Tag.BARE_SOIL, min(0.5 + s.brown_fraction / 2, 0.95),
             f"brown_fraction={s.brown_fraction:.3f}, canopy_cover={s.canopy_cover:.3f}")
-    if s.blue_fraction > 0.12 and s.canopy_cover < 0.30:
-        add(Tag.SHRUB, min(0.45 + s.blue_fraction / 2, 0.9),
-            f"blue_fraction={s.blue_fraction:.3f} with low canopy")
+    if s.magenta_fraction > 0.12:
+        # Magenta/violet is not vegetation and not water, but it is a strong
+        # signal the frame is not field photography, so it is reported rather
+        # than left unclassified.
+        add(Tag.SHRUB, min(0.45 + s.magenta_fraction / 2, 0.9),
+            f"magenta_fraction={s.magenta_fraction:.3f} (non-field colour cast)")
     if s.water_fraction > WATER_FRACTION_THRESHOLD:
         add(Tag.WATER, min(0.55 + s.water_fraction * 2, 0.98),
             f"water_fraction={s.water_fraction:.3f}")

@@ -201,6 +201,20 @@ _PHRASE_INLIER = re.compile(
     re.IGNORECASE,
 )
 _PHRASE_YEAR = re.compile(r"\b(?:from|since|after|before|until)\s+(\d{4})\b", re.IGNORECASE)
+
+#: Two-sided range, e.g. "between 20 and 40 percent", "from 20 to 40 percent".
+#:
+#: WITHOUT this, the single-number patterns matched only the first figure, so
+#: "between 20 and 40" compiled to ">= 20" and returned assets at 400% canopy
+#: growth. Silently dropping a bound WIDENS a result set, which for an auditor is
+#: worse than failing: it looks like an answer. Same class of defect as the
+#: inverted-comparator bug, and it is handled here rather than left to a reader
+#: to infer.
+_RANGE_PATTERN = re.compile(
+    r"\b(?:between|from)\s+(-?\d+(?:\.\d+)?)\s*"
+    r"(?:and|to|-)\s*(-?\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
 _PROJECT = re.compile(r"\b([A-Z]{3,6}-[0-9]{3,5})\b")
 _PARCEL = re.compile(r"\b(?:parcel|plot|zone)\s+([A-Za-z0-9_-]{2,64})\b", re.IGNORECASE)
 _PHASE = re.compile(
@@ -277,14 +291,50 @@ def compile_query(natural_language: str) -> CompiledQuery:
         value = _validate_pattern("cadastral_polygon_id", m.group(1))
         add(f"metadata.cadastral_polygon_id={_quote(value)}", "cadastral_polygon_id", value, "=")
 
-    # --- numeric range constraints --------------------------------------- #
+    # --- two-sided ranges, matched before single numbers ------------------ #
+    # Order matters: "between 20 and 40" must be consumed here, or the
+    # single-number pattern below would match the 20 and discard the 40.
+    consumed_spans: list = []
+    for m in _RANGE_PATTERN.finditer(text):
+        field = None
+        prefix = lowered[max(0, m.start() - 45): m.start()]
+        for needle, target in (
+            ("canopy", "canopy_delta_pct"),
+            ("growth", "canopy_delta_pct"),
+            ("cover", "canopy_delta_pct"),
+            ("confidence", "jev_confidence_score"),
+            ("inlier", "sift_inlier_ratio"),
+            ("alignment", "sift_inlier_ratio"),
+        ):
+            if needle in prefix:
+                field = target
+                break
+        if field is None:
+            continue
+        lo, hi = float(m.group(1)), float(m.group(2))
+        if lo > hi:
+            raise QueryCompilationError(
+                f"Range lower bound {lo} is above the upper bound {hi}; "
+                "a range must not be inverted."
+            )
+        _validate_range(field, lo)
+        _validate_range(field, hi)
+        add(
+            f"metadata.{field}>={lo} AND metadata.{field}<={hi}",
+            field, [lo, hi], "range",
+        )
+        consumed_spans.append(m.span())
+        text = text[: m.start()] + " " * (m.end() - m.start()) + text[m.end():]
+    lowered = text.lower()
+
+    # --- single-number range constraints --------------------------------- #
     for pattern, field, key in (
         (_PHRASE_CANOPY, "canopy_delta_pct", "canopy"),
         (_PHRASE_CONFIDENCE, "jev_confidence_score", "confidence"),
         (_PHRASE_INLIER, "sift_inlier_ratio", "inliers"),
     ):
         m = pattern.search(text)
-        if m:
+        if m and not _overlaps(m.span(), consumed_spans):
             raw = float(m.group(1))
             op = _detect_comparator(m.group(0))
             value = _validate_range(field, raw)
@@ -351,6 +401,12 @@ _STOP_PHRASES = (
     "sector", "pictures", "pretty", "trees", "project", "projects", "photo",
     "picture", "want", "need", "looking", "look",
 )
+
+
+def _overlaps(span: tuple, consumed: list) -> bool:
+    """True if a regex match lands inside a span already consumed."""
+    start, end = span
+    return any(start < c_end and c_start < end for c_start, c_end in consumed)
 
 
 def _find_unparsed(original: str, clauses: list, constraints: list) -> list:

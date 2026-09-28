@@ -33,7 +33,9 @@ from conftest import make_cluttered_scene, make_soil_scene
 from services.enrichment_service import (
     BAND_BLUE,
     BAND_BROWN,
+    BAND_CYAN,
     BAND_GREEN,
+    BAND_MAGENTA,
     BAND_YELLOW,
     Tag,
     TagEvidence,
@@ -113,6 +115,57 @@ class TestHueBands:
 # =========================================================================== #
 # Enrichment / auto-tagging
 # =========================================================================== #
+
+
+class TestHueWheelCoverage:
+    """The bands must tile the whole 0-360 wheel.
+
+    The first fix corrected the bands' SCALE (0-179 vs 0-360). This pins the
+    second property: that they are also exhaustive. Hue 280 (violet) and 300
+    (magenta) originally fell outside every band, so the per-band fractions
+    summed to less than the saturated-pixel total and the measurement was
+    quietly incomplete.
+    """
+
+    def test_every_hue_lands_in_exactly_one_band(self):
+        for hue in range(0, 360, 5):
+            bands = [
+                (BAND_BROWN, "brown"), (BAND_YELLOW, "yellow"),
+                (BAND_GREEN, "green"), (BAND_CYAN, "cyan"),
+                (BAND_BLUE, "blue"), (BAND_MAGENTA, "magenta"),
+            ]
+            hits = [name for (lo, hi), name in bands if lo <= hue < hi]
+            assert len(hits) == 1, f"hue {hue} matched {hits or 'NOTHING'}"
+            assert hits[0] != "brown" or hue < 45
+
+    @pytest.mark.parametrize("rgb,name,field", [
+        ((200, 30, 180), "magenta", "magenta_fraction"),
+        ((140, 60, 200), "violet", "magenta_fraction"),
+    ])
+    def test_high_hues_are_measured_not_dropped(self, rgb, name, field):
+        img = np.zeros((40, 40, 3), np.uint8)
+        img[:, :] = rgb
+        s = measure_image(img)
+        assert getattr(s, field) > 0.9, f"{name} measured {getattr(s, field)}"
+
+    def test_bands_do_not_overlap(self):
+        ordered = sorted(
+            [BAND_BROWN, BAND_YELLOW, BAND_GREEN, BAND_CYAN, BAND_BLUE, BAND_MAGENTA]
+        )
+        for (_, prev_hi), (next_lo, _) in zip(ordered, ordered[1:]):
+            assert prev_hi == next_lo, f"gap or overlap between {prev_hi} and {next_lo}"
+
+    def test_band_fractions_sum_to_the_saturated_fraction(self):
+        """A frame of one hue must be fully accounted for."""
+        for rgb in [(200, 30, 180), (58, 150, 52), (128, 96, 68)]:
+            img = np.zeros((60, 60, 3), np.uint8)
+            img[:, :] = rgb
+            s = measure_image(img)
+            total = (
+                s.green_fraction + s.yellow_fraction + s.brown_fraction
+                + s.blue_fraction + s.cyan_fraction + s.magenta_fraction
+            )
+            assert total > 0.95, f"{rgb} only {total:.3f} banded"
 
 
 class TestEnrichment:
@@ -367,6 +420,39 @@ class TestSemanticIndex:
 
 
 class TestQueryCompilation:
+    def test_two_sided_range_keeps_both_bounds(self):
+        """REGRESSION: 'between 20 and 40' compiled to '>= 20' alone.
+
+        Silently dropping the upper bound WIDENS the result set — it would hand
+        an auditor assets at 400% canopy growth and look like a valid answer.
+        Same class as the inverted-comparator defect.
+        """
+        q = compile_query("canopy growth between 20 and 40 percent")
+        assert "metadata.canopy_delta_pct>=20.0" in q.expression
+        assert "metadata.canopy_delta_pct<=40.0" in q.expression
+
+    @pytest.mark.parametrize("phrase,field,lo,hi", [
+        ("confidence between 50 and 70 percent", "jev_confidence_score", 50.0, 70.0),
+        ("inlier alignment from 60 to 90 percent", "sift_inlier_ratio", 60.0, 90.0),
+    ])
+    def test_range_forms_vary_by_field(self, phrase, field, lo, hi):
+        q = compile_query(phrase)
+        assert f"metadata.{field}>={lo}" in q.expression
+        assert f"metadata.{field}<={hi}" in q.expression
+
+    def test_inverted_range_is_rejected(self):
+        with pytest.raises(QueryCompilationError, match="must not be inverted"):
+            compile_query("canopy between 40 and 20 percent")
+
+    def test_range_bounds_are_range_validated(self):
+        with pytest.raises(QueryCompilationError, match="outside the permitted range"):
+            compile_query("confidence between 50 and 900 percent")
+
+    def test_single_bound_still_works(self):
+        q = compile_query("canopy over 25 percent")
+        assert "metadata.canopy_delta_pct>=25.0" in q.expression
+        assert "<=" not in q.expression
+
     def test_compiles_a_real_sentence(self):
         q = compile_query("show mangrove plots with canopy growth over 25%")
         assert 'metadata.sustainability_domain="mangrove_restoration"' in q.expression
