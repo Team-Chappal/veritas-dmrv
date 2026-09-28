@@ -88,13 +88,38 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package.json
-      # `npm ci` requires a committed package-lock.json. The frontend has not
-      # been scaffolded yet (Stage 6), so no lockfile exists and `npm ci` fails
-      # with EUSAGE. Switch this to `npm ci` once frontend/package-lock.json
-      # is committed, so builds become reproducible.
+      # npm ci, not npm install: the lockfile is committed now, and `install`
+      # silently updates it, which is how a build ends up depending on packages
+      # nobody pinned.
       - name: Install dependencies
-        run: npm --prefix frontend install --no-audit --no-fund
+        run: npm --prefix frontend ci --no-audit --no-fund
       - name: Build
         run: npm --prefix frontend run build
       - name: Typecheck
         run: npm --prefix frontend run typecheck
+
+  frontend-e2e:
+    name: Playwright e2e (backend absent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm --prefix frontend ci --no-audit --no-fund
+      - name: Install Chromium
+        run: npx --prefix frontend playwright install --with-deps chromium
+      # No backend service here, deliberately. S6 exit criterion 5 is that the
+      # demo works with the backend entirely absent, so a suite that needed one
+      # would be testing the wrong thing.
+      - name: E2E
+        run: npm --prefix frontend run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
