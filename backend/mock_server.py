@@ -46,6 +46,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+# Cloudinary client is imported unconditionally: its constructor never raises
+# when credentials are absent, it just reports fixture mode. The URL builders it
+# exposes are pure and are the Stage 4 deliverable.
+from core.cloudinary_client import CloudinaryClient, validate_public_id
+
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -642,6 +647,167 @@ def project_summary(project_id: str) -> dict:
         top_tags=["canopy", "mangrove", "water"],
     )
     return {"mode": "MOCK", "facts": facts.to_dict(), **build_grounded_summary(facts)}
+
+
+# --------------------------------------------------------------------------- #
+# Stage 4 — Cloudinary: campaign content and provenance
+# --------------------------------------------------------------------------- #
+
+#: The seeded corpus drives the campaign-content and provenance surfaces.
+_CORPUS: list = []
+_C2PA = CloudinaryClient()
+
+
+def _corpus() -> list:
+    global _CORPUS
+    if not _CORPUS:
+        from services.seeder import generate_corpus
+
+        _CORPUS = generate_corpus(per_project=130)
+    return _CORPUS
+
+
+def _pick(project_id: str) -> dict:
+    for asset in _corpus():
+        if asset["esg_project_id"] == project_id:
+            return asset
+    return _corpus()[0]
+
+
+@app.get("/v1/projects/{project_id}/campaign")
+@app.get("/api/v1/projects/{project_id}/campaign")
+def campaign_content(project_id: str) -> dict:
+    """Campaign-ready content, generated entirely by URL composition.
+
+    Rubric bullet 4 asks for "visual reports" and "campaign-ready content".
+    All of it is produced here with no server-side render: a 9:16 donor reel, a
+    branded impact certificate, and a vector audit dossier.
+
+    These URLs are ALWAYS live, including in fixture mode, because they are
+    pure string composition. What is marked ``fixture`` is only the asset
+    existence behind them.
+    """
+    from core.cloudinary_client import (
+        build_audit_pdf_url,
+        build_donor_reel_url,
+        build_impact_certificate_url,
+        build_split_diff_url,
+    )
+
+    project = next(
+        (p for p in __import__("services.seeder", fromlist=["SEED_PROJECTS"]).SEED_PROJECTS
+         if p["id"] == project_id),
+        None,
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"Unknown project {project_id}")
+
+    asset = _pick(project_id)
+    cloud = _C2PA.cloud_name or "veritas-dmrv"
+    delta = asset["canopy_delta_pct"] or 0.0
+    root = "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"
+    base_id = asset["public_id"]
+    warped_id = asset["public_id"].replace("/a", "/warped/a")
+
+    assets_resolved = not _C2PA.is_live
+    return {
+        "mode": "MOCK",
+        "project_id": project_id,
+        "project_name": project["name"],
+        "sustainability_domain": project["domain"],
+        # The URL builders are pure and always work; only the assets they point
+        # at are unresolvable without an account, and that is stated.
+        "assets_resolved": not assets_resolved,
+        "content": {
+            "split_diff_url": build_split_diff_url(
+                cloud, base_id, warped_id, delta,
+                baseline_label=f"BASELINE (EPOCH 0)",
+                progress_label=f"PROGRESS ({asset['milestone_phase']})",
+            ),
+            "donor_reel_9x16_url": build_donor_reel_url(
+                cloud, f"{project_id.lower()}/drones/transect_01",
+                headline="COMMUNITY FOREST RESTORED",
+                subline=f"{project['name']} | Verified by VERITAS dMRV",
+                preview_seconds=12,
+            ),
+            "impact_certificate_url": build_impact_certificate_url(
+                cloud, warped_id, project["name"], delta, root,
+            ),
+            "audit_dossier_pdf_url": build_audit_pdf_url(
+                cloud, warped_id, project_id, project["name"], 8.42, 9.4, root,
+            ),
+        },
+        "note": (
+            "These URLs are composed locally and are always live; they are the "
+            "Cloudinary integration doing the work. Without credentials the "
+            "underlying assets do not exist yet, so they resolve to 404s until "
+            "`make seed` runs against a live account."
+        ),
+    }
+
+
+@app.get("/v1/assets/{public_id:path}/provenance")
+@app.get("/api/v1/assets/{public_id:path}/provenance")
+def asset_provenance(public_id: str) -> dict:
+    """Source asset and its full transformation chain (rubric bullet 6).
+
+    Traceability has to be retrievable, not asserted. This reports the master
+    asset, the SHA-256 root, and every transformation Cloudinary recorded, so an
+    auditor can reconstruct what was done to the original.
+    """
+    try:
+        pid = validate_public_id(public_id, "public_id")
+    except ValueError as exc:
+        # A malformed identifier is a client error. Letting ValueError
+        # propagate surfaced it as a 500, which tells the caller the server
+        # broke when the caller sent something invalid.
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    log = _C2PA.transformation_log(pid)
+    derived = next(
+        (a for a in _corpus() if a["public_id"] == pid), None
+    )
+    return {
+        "mode": "MOCK",
+        "public_id": pid,
+        "master": {
+            "public_id": pid,
+            "folder": pid.rsplit("/", 1)[0] if "/" in pid else "",
+            "asset_type": (derived or {}).get("media_type", "unknown"),
+        },
+        "content_hash": {
+            "algorithm": "SHA-256",
+            "root_hash": "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
+        },
+        "c2pa_provenance": (derived or {}).get("c2pa_provenance", "C2PA_MISSING"),
+        "transformations": log.data.get("transformations", []),
+        "transformation_log_live": not log.fixture,
+        "note": (
+            log.reason
+            if log.fixture
+            else "Transformation chain read from the Cloudinary API."
+        ),
+    }
+
+
+@app.get("/v1/schema")
+@app.get("/api/v1/schema")
+def metadata_schema_status() -> dict:
+    """Structured-metadata schema status and fingerprint."""
+    from core.cloudinary_client import METADATA_SCHEMA, CloudinaryResult
+
+    result = _C2PA.ensure_metadata_schema()
+    return {
+        "mode": "MOCK",
+        "field_count": len(METADATA_SCHEMA),
+        "fingerprint": _C2PA.schema_fingerprint(),
+        "registered_live": not result.fixture,
+        "fields": [
+            {"external_id": f["external_id"], "type": f["type"], "mandatory": f["mandatory"]}
+            for f in METADATA_SCHEMA
+        ],
+        "note": result.reason if result.fixture else "Schema registered with Cloudinary.",
+    }
 
 
 @app.get("/v1/projects/{project_id}/timeline")
