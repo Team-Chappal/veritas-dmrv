@@ -98,8 +98,21 @@ is the failure mode this project exists to catch, and it happened to us.
   silently discarded. The builder now uses the only form that composites (`f_pdf`
   on the image) and the harness reports the check as SKIP with the reason, rather
   than calling a paywall a defect.
-- **`donor_reel` is unverified** — the probe asset is an image and the reel is a
-  video URL. Reported as SKIP, not FAIL.
+- **`donor_reel` now renders** (200, `video/mp4`). Closing it found a further
+  real defect: the builder used `g_auto:subject`, which is **image-only** and
+  400s on a `/video/` delivery. Every other builder targets images, so this was
+  invisible until a video probe existed. Verified live:
+
+  | gravity | result |
+  | :--- | :--- |
+  | `g_auto:subject` | 400 — `Invalid g_auto for video param` |
+  | `center` | **200** (now the default) |
+  | `g_auto` / `g_auto:faces` | 423 "Video tracking-crop is pending" — retryable, not malformed |
+  | `g_auto:ocr_text` | 420 — paid subscription required |
+
+  `g_auto` is exposed as a parameter but is not the default, because it can
+  answer 423 on a cold asset. The harness generates the video probe with ffmpeg
+  and SKIPs with that reason when ffmpeg is absent.
 - **The webhook signature is implemented per the documentation** — see below.
 
 ### 2. Semantic search is lexical, not neural (bullet 5)

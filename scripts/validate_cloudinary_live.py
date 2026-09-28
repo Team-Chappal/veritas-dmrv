@@ -45,9 +45,13 @@ import json
 import os
 import sys
 import time
+import shutil
+import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "backend"))
@@ -116,6 +120,32 @@ def make_probe_image(width: int = 640, height: int = 480) -> bytes:
     return buf.tobytes()
 
 
+def make_probe_video() -> Optional[bytes]:
+    """A real, tiny MP4, generated locally with ffmpeg.
+
+    The 9:16 donor reel is the one campaign URL that cannot be checked with a
+    still image: a `/video/upload/` delivery against an image asset 404s, and
+    reporting that as a builder defect would be wrong. ffmpeg is optional, so
+    this returns None rather than failing when it is absent.
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return None
+    out = Path(tempfile.mkdtemp(prefix="veritas-video-")) / "probe.mp4"
+    cmd = [
+        ffmpeg, "-v", "error",
+        "-f", "lavfi", "-i", "testsrc=size=320x180:rate=10:duration=2",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        "-shortest", "-y", str(out),
+    ]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+    except Exception:  # noqa: BLE001 - any ffmpeg problem means "cannot probe"
+        return None
+    return out.read_bytes() if out.exists() else None
+
+
 def minimal_pdf() -> bytes:
     """A genuinely valid one-page PDF, byte-for-byte, with no dependencies.
 
@@ -162,6 +192,39 @@ def background_png() -> bytes:
     buf = io.BytesIO()
     Image.fromarray(arr).save(buf, "PNG")
     return buf.getvalue()
+
+
+def reel_url_or_none(cloud: str, stamp: str, report: "Report",
+                     metadata: dict) -> Optional[str]:
+    """Build the 9:16 donor-reel URL, if a video probe could be created."""
+    from core.cloudinary_client import build_donor_reel_url
+
+    payload = make_probe_video()
+    if payload is None:
+        report.skip(
+            "donor_reel URL renders",
+            "ffmpeg is not installed, so no video probe could be produced. A "
+            "`/video/upload/` delivery cannot be checked against a still image. "
+            "Install ffmpeg and re-run to cover this check.",
+        )
+        return None
+    try:
+        import cloudinary.uploader
+
+        cloudinary.uploader.upload(
+            # folder= AND a bare public_id, or the asset lands at the root while
+            # the URL below looks for it inside veritas_validation/. The image
+            # probe hit exactly this and 404'd.
+            payload, public_id=f"probe_video_{stamp}", folder="veritas_validation",
+            overwrite=True, resource_type="video",
+            # Cloudinary enforces the mandatory fields on EVERY upload, videos
+            # included, so a video probe needs them exactly as an image does.
+            metadata=metadata,
+        )
+    except Exception as exc:
+        report.skip("donor_reel URL renders", f"video probe upload failed: {exc}")
+        return None
+    return build_donor_reel_url(cloud, f"veritas_validation/probe_video_{stamp}")
 
 
 def provision_brand_assets(report: "Report") -> None:
@@ -395,24 +458,32 @@ def main() -> int:
         "impact_certificate": build_impact_certificate_url(
             cloud, warped, "Validation Project", 38.2, "a" * 64
         ),
-        # The reel is a VIDEO url; the probe asset is an image, so a 404 here
-        # would be the harness's fault, not the builder's. Skip rather than
-        # report a false negative, and say so.
-        "donor_reel": None,
+        # The reel is a VIDEO url. A still image would 404 here and that is the
+        # harness's fault, not the builder's -- so upload a real MP4 when ffmpeg
+        # is available, and SKIP with the reason when it is not.
+        "donor_reel": reel_url_or_none(cloud, stamp, report, upload_metadata),
         "audit_pdf": build_audit_pdf_url(
             cloud, warped, "VAL-001", "Validation", 8.42, 9.4, "a" * 64
         ),
     }
     for name, url in urls.items():
         if url is None:
-            report.skip(f"{name} URL renders",
-                        "needs a VIDEO asset; the probe is an image. Upload a "
-                        "video probe to cover this check.")
+            # Already reported with a specific reason by its builder helper.
             continue
         status, ctype, size, message = http_status(url)
         ok = status == 200 and size > 0
         detail = f"HTTP {status}, {ctype}, {size} bytes"
         if not ok:
+            if status == 423:
+                # Cloudinary queues video tracking-crop; 423 means "not ready",
+                # not "malformed". Failing here would report a builder defect
+                # for a request that simply has not finished processing.
+                report.skip(
+                    f"{name} URL renders",
+                    "Cloudinary returned 423: video tracking-crop is queued and "
+                    "not yet processed. Retryable, not a builder defect.",
+                )
+                continue
             if status == 401 and "acl" in (message or "").lower():
                 # PDF output is an add-on, not a free-tier feature. Report it as
                 # plan-gated rather than as a defect in the builder: a harness

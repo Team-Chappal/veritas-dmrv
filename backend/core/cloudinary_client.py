@@ -551,20 +551,39 @@ def build_donor_reel_url(
     headline: str = "COMMUNITY FOREST RESTORED",
     subline: str = "Verified by VERITAS dMRV",
     preview_seconds: int = 0,
+    gravity: str = "center",
 ) -> str:
     """Compose the 9:16 vertical donor/campaign reel URL.
 
     This is the rubric's "campaign-ready content": a horizontal drone transect
-    reframed to vertical, with `g_auto:subject` keeping the active planting
-    sector in frame. ``preview_seconds`` adds Cloudinary's preview slicing,
+    reframed to vertical. ``preview_seconds`` adds Cloudinary's preview slicing,
     which is the documented mitigation for a slow stream during a live demo.
+
+    ``gravity`` defaults to ``center``, and the previous default of
+    ``g_auto:subject`` was WRONG for video. Verified on a live account against a
+    `/video/upload/` delivery:
+
+        g_auto:subject   400  Invalid g_auto for video param 'auto:subject'
+                           -- subject-aware cropping is IMAGE-only
+        center           200
+        g_auto           423  "Video tracking-crop is pending" -- Cloudinary's
+                           video equivalent, but queued asynchronously, so it is
+                           retryable rather than available on first request
+        g_auto:faces     423  same
+        g_auto:ocr_text  420  requires a paid subscription
+        g_auto:anomalies 400  invalid qualifier
+
+    So `g_auto` is the AI-assisted option and is exposed as a parameter, but it
+    is not the default: it can answer 423 on a cold asset, and a reel that fails
+    to render on first request is worse than one that is centred.
     """
     vid = validate_public_id(video_public_id, "video_public_id")
     for value, label in ((headline, "headline"), (subline, "subline")):
         _safe_text(value, label)
 
+    _safe_component(f"g_{gravity}", "gravity")
     components = [
-        "ar_9:16,c_fill,g_auto:subject",
+        f"ar_9:16,c_fill,g_{gravity}",
         "e_sharpen:60",
     ]
     if preview_seconds and preview_seconds > 0:
