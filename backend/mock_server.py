@@ -118,6 +118,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# S5.8 rate limiting. The decorator is applied per-route via core.rate_limit.
+from core.rate_limit import register as _register_rate_limiter  # noqa: E402
+
+_register_rate_limiter(app)
+
 DECISION_PASS = "VERIFIED_PASS"
 DECISION_REVIEW = "REVIEW_AMBIGUOUS"
 DECISION_FRAUD = "QUARANTINE_FRAUD"
@@ -171,6 +176,7 @@ def health() -> dict:
             "timeline": S3_AVAILABLE,
             "semantic_backend": _semantic_index().backend_name,
             "webhook_signature_enforced": _WEBHOOK_PROCESSOR.verifier.requires_signature,
+            "auth": auth_state(),
             "note": (
                 "Photogrammetry and canopy quantification run for real when "
                 "OpenCV is installed. Set VERITAS_STUB_CV=1 for canned values."
@@ -658,6 +664,7 @@ def project_summary(project_id: str) -> dict:
 #: Built with the webhook secret when configured. Without one the processor
 #: ACCEPTS unverified notifications — degraded for the demo, and the health
 #: endpoint below says so plainly.
+from core.auth import auth_state  # noqa: E402
 from services.webhook_service import (  # noqa: E402
     WebhookAction,
     WebhookProcessor,
