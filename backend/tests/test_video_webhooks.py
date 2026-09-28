@@ -15,9 +15,17 @@ Two properties carry most of the weight here:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import time
 
 import pytest
+
+
+def _now() -> str:
+    """A fresh unix timestamp, as Cloudinary sends it."""
+    return str(int(time.time()))
 
 from services.video_service import (
     CUE_GAP_SECONDS,
@@ -33,7 +41,9 @@ from services.video_service import (
 )
 from services.webhook_service import (
     DEFAULT_SIGNATURE_SCHEME,
+    SCHEME_CLOUDINARY_DOCUMENTED,
     SIGNATURE_HEADERS,
+    TIMESTAMP_HEADER,
     WebhookAction,
     WebhookProcessor,
     WebhookVerifier,
@@ -316,45 +326,104 @@ class TestSignatureVerification:
 
     def test_correct_signature_accepted(self):
         v = WebhookVerifier(secret="s3cret")
-        sig = compute_signature(self.BODY, "s3cret", v.scheme)
-        ok, _ = v.verify(self.BODY, {"X-Cld-Signature": sig})
+        ts = _now()
+        sig = compute_signature(self.BODY, "s3cret", timestamp=ts)
+        ok, _ = v.verify(self.BODY, {"X-Cld-Signature": sig, TIMESTAMP_HEADER: ts})
         assert ok
 
     def test_header_lookup_is_case_insensitive(self):
         v = WebhookVerifier(secret="s3cret")
-        sig = compute_signature(self.BODY, "s3cret", v.scheme)
-        assert v.verify(self.BODY, {"x-cld-signature": sig})[0]
-        assert v.verify(self.BODY, {"X-CLD-SIGNATURE": sig})[0]
+        ts = _now()
+        sig = compute_signature(self.BODY, "s3cret", timestamp=ts)
+        for key in ("X-Cld-Signature", "x-cld-signature", "X-CLD-SIGNATURE"):
+            assert v.verify(self.BODY, {key: sig, TIMESTAMP_HEADER: ts})[0], key
 
     def test_wrong_signature_rejected(self):
         v = WebhookVerifier(secret="s3cret")
-        assert not v.verify(self.BODY, {"X-Cld-Signature": "deadbeef"})[0]
+        assert not v.verify(
+            self.BODY, {"X-Cld-Signature": "deadbeef", TIMESTAMP_HEADER: _now()}
+        )[0]
 
     def test_missing_signature_rejected(self):
         v = WebhookVerifier(secret="s3cret")
         ok, reason = v.verify(self.BODY, {})
         assert not ok and "no signature header" in reason
 
+    def test_missing_timestamp_rejected(self):
+        """The timestamp is part of the signed string, so no signature without it
+        can be checked -- and guessing the construction is how this module shipped
+        a verifier that rejected every genuine notification."""
+        v = WebhookVerifier(secret="s3cret")
+        sig = compute_signature(self.BODY, "s3cret", timestamp=_now())
+        ok, reason = v.verify(self.BODY, {"X-Cld-Signature": sig})
+        assert not ok and TIMESTAMP_HEADER in reason
+
+    def test_stale_timestamp_rejected_as_a_replay(self):
+        """A captured, correctly-signed request must not stay valid forever."""
+        v = WebhookVerifier(secret="s3cret", valid_for=60)
+        old = str(int(time.time()) - 3600)
+        sig = compute_signature(self.BODY, "s3cret", timestamp=old)
+        ok, reason = v.verify(self.BODY, {"X-Cld-Signature": sig, TIMESTAMP_HEADER: old})
+        assert not ok and "replay" in reason
+
+    def test_garbage_timestamp_rejected(self):
+        v = WebhookVerifier(secret="s3cret")
+        ok, reason = v.verify(
+            self.BODY, {"X-Cld-Signature": "abc", TIMESTAMP_HEADER: "not-a-time"}
+        )
+        assert not ok and "timestamp" in reason
+
+    def test_hmac_signature_is_rejected(self):
+        """The scheme is NOT HMAC.
+
+        This is the exact bug the live documentation review caught: every scheme
+        in this module used hmac(secret, body), which would have rejected every
+        genuine Cloudinary notification while passing every test here.
+        """
+        v = WebhookVerifier(secret="s3cret")
+        ts = _now()
+        hmac_sig = hmac.new(b"s3cret", self.BODY, hashlib.sha1).hexdigest()
+        ok, _ = v.verify(self.BODY, {"X-Cld-Signature": hmac_sig, TIMESTAMP_HEADER: ts})
+        assert not ok
+
+    def test_documented_scheme_is_a_plain_hash_with_the_secret_appended(self):
+        """sha(body + timestamp + secret) -- not a keyed MAC."""
+        ts = "1719310887"
+        expected = hashlib.sha1(self.BODY + ts.encode() + b"s3cret").hexdigest()
+        assert compute_signature(self.BODY, "s3cret", timestamp=ts) == expected
+        assert compute_signature(self.BODY, "s3cret", timestamp=ts, algorithm="sha256") \
+            == hashlib.sha256(self.BODY + ts.encode() + b"s3cret").hexdigest()
+
+    def test_timestamp_is_required_by_compute_signature(self):
+        with pytest.raises(ValueError, match="timestamp is required"):
+            compute_signature(self.BODY, "s3cret")
+
     def test_tampered_body_rejected(self):
         v = WebhookVerifier(secret="s3cret")
-        sig = compute_signature(self.BODY, "s3cret", v.scheme)
-        assert not v.verify(self.BODY + b" ", {"X-Cld-Signature": sig})[0]
+        ts = _now()
+        sig = compute_signature(self.BODY, "s3cret", timestamp=ts)
+        assert not v.verify(
+            self.BODY + b" ", {"X-Cld-Signature": sig, TIMESTAMP_HEADER: ts}
+        )[0]
 
     def test_all_documented_signature_headers_are_honoured(self):
         v = WebhookVerifier(secret="s")
-        sig = compute_signature(self.BODY, "s", v.scheme)
+        ts = _now()
+        sig = compute_signature(self.BODY, "s", timestamp=ts)
         for header in SIGNATURE_HEADERS:
-            assert v.verify(self.BODY, {header: sig})[0], header
+            assert v.verify(self.BODY, {header: sig, TIMESTAMP_HEADER: ts})[0], header
 
     def test_scheme_is_a_parameter_not_an_assertion(self):
         """The exact construction is unconfirmed and must not be hard-coded."""
         text = describe_scheme_uncertainty()
-        assert "NOT asserted as correct" in text
+        assert "NOT confirmed against a real notification" in text
+        assert "NOT HMAC" in text
         assert WebhookVerifier(secret="s").scheme == DEFAULT_SIGNATURE_SCHEME
-        # A different scheme yields a different signature, which is exactly why
-        # it has to be settled against live traffic.
-        assert compute_signature(self.BODY, "s", "plain_concat") != \
-            compute_signature(self.BODY, "s", DEFAULT_SIGNATURE_SCHEME)
+        assert DEFAULT_SIGNATURE_SCHEME == SCHEME_CLOUDINARY_DOCUMENTED
+        # Still unconfirmed against live traffic, so it stays a parameter rather
+        # than a hard-coded construction: an unknown scheme is still refused.
+        with pytest.raises(ValueError, match="Unknown signature scheme"):
+            compute_signature(self.BODY, "s", "some_other_idea", timestamp=_now())
 
     def test_unknown_scheme_rejected(self):
         with pytest.raises(ValueError, match="Unknown signature scheme"):
@@ -362,11 +431,23 @@ class TestSignatureVerification:
 
     def test_empty_secret_rejected(self):
         with pytest.raises(ValueError, match="secret is required"):
-            compute_signature(self.BODY, "")
+            compute_signature(self.BODY, "", timestamp=_now())
 
     def test_unsupported_algorithm_rejected(self):
         with pytest.raises(ValueError, match="algorithm"):
-            compute_signature(self.BODY, "s", DEFAULT_SIGNATURE_SCHEME, "whirlpool")
+            compute_signature(self.BODY, "s", DEFAULT_SIGNATURE_SCHEME, "whirlpool", _now())
+
+    def test_unknown_scheme_rejected(self):
+        with pytest.raises(ValueError, match="Unknown signature scheme"):
+            compute_signature(self.BODY, "s", "telepathy", timestamp=_now())
+
+    def test_legacy_scheme_names_still_resolve(self):
+        """An old config naming must not start raising on a string nobody
+        remembers writing."""
+        ts = _now()
+        expected = compute_signature(self.BODY, "s", timestamp=ts)
+        for legacy in ("body_plus_secret", "secret_plus_body", "plain_concat"):
+            assert compute_signature(self.BODY, "s", legacy, timestamp=ts) == expected
 
 
 # =========================================================================== #
@@ -374,11 +455,14 @@ class TestSignatureVerification:
 # =========================================================================== #
 
 
-def _post(processor, payload, secret=None):
+def _post(processor, payload, secret=None, timestamp=None):
     body = json.dumps(payload).encode()
     headers = {}
     if secret:
-        headers["X-Cld-Signature"] = compute_signature(body, secret)
+        headers["X-Cld-Signature"] = compute_signature(
+            body, secret, timestamp=timestamp or _now()
+        )
+        headers[TIMESTAMP_HEADER] = timestamp or _now()
     return processor.process(body, headers)
 
 
@@ -428,7 +512,12 @@ class TestWebhookProcessing:
 
     def test_malformed_json_rejected(self):
         p = WebhookProcessor(WebhookVerifier(secret="s"))
-        result = p.process(b"not json", {"X-Cld-Signature": compute_signature(b"not json", "s")})
+        ts = _now()
+        result = p.process(
+            b"not json",
+            {"X-Cld-Signature": compute_signature(b"not json", "s", timestamp=ts),
+             TIMESTAMP_HEADER: ts},
+        )
         assert result.action == WebhookAction.REJECTED_MALFORMED
 
     def test_non_object_payload_rejected(self):

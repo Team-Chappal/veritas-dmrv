@@ -29,6 +29,14 @@ def _load_env_files() -> None:
     Fails silently if python-dotenv is not installed: credentials are optional
     and a missing convenience must not break a stage demo.
     """
+    # Escape hatch. The test suite must be able to run in fixture mode on a
+    # machine that HAS real credentials in backend/.env -- otherwise the seeder
+    # uploads 520 assets to the live account during `make test`. Popping the
+    # variables in conftest is not enough, because this function runs when
+    # core.config is IMPORTED, which is after conftest has run.
+    if os.getenv("VERITAS_NO_DOTENV"):
+        return
+
     try:
         from dotenv import load_dotenv
     except ImportError:  # pragma: no cover - dotenv is pinned in requirements

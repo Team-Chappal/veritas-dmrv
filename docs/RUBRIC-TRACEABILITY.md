@@ -69,17 +69,38 @@ capability is only partly delivered — says so.
 
 ## The two gaps, stated plainly
 
-### 1. No Cloudinary call has run live
+### 1. The live paths now run, and the transformation grammar was WRONG
 
-`scripts/validate_cloudinary_live.py` exists to settle this in one command, and
-**has never been executed** because no credentials were available. Until it
-passes, three things are unproven:
+`scripts/validate_cloudinary_live.py` has been run against a real free-tier
+account: **18 checks pass, 0 fail, 2 skipped.** That run is the most valuable
+thing this project has done, because it disproved a claim the unit tests were
+green about. The composed transformation URLs had never rendered, and the
+defects were only findable against the real API:
 
-- the composed transformation URLs actually render (if Cloudinary has changed
-  `fl_layer_apply` or `g_auto:subject`, they 400);
-- the structured-metadata schema bootstraps as written;
-- the webhook signature scheme, which is deliberately a **parameter** rather
-  than an assertion — see the note below.
+| Defect | Real symptom | Fix |
+| :--- | :--- | :--- |
+| `fl_layer_apply` in a delivery URL | `Cannot find matching layer start` | upload-time flag; gravity belongs inside `l_` |
+| folder-qualified layer reference | `Resource not found` | Cloudinary uses a **colon**, not a slash: `l_a:b:c` |
+| `b_rgb:000000_80` | `Invalid color name` | alpha is 8 hex digits: `b_rgb:00000080` |
+| font `Inter` | `Unsupported font family Inter` | not on Cloudinary's servers; `Lato` verified |
+| `co_emerald_400`, `co_slate_300` | `Invalid color name` | no such named colours; `co_rgb:` |
+| `\n` and `/` inside overlay text | `public_id (...) is invalid` | both terminate the layer, even encoded |
+
+Nine tests asserted the shape of these URL strings and passed throughout. They
+checked the builder's output, never asked Cloudinary whether it was valid. That
+is the failure mode this project exists to catch, and it happened to us.
+
+**Still unproven, and stated rather than assumed:**
+
+- **`audit_pdf` is plan-gated.** `f_pdf` output returns `401 deny or ACL failure`
+  on a free plan. Separately verified: Cloudinary does **not** composite text onto
+  a `raw` PDF — the file comes back byte-identical, so the layer stack is
+  silently discarded. The builder now uses the only form that composites (`f_pdf`
+  on the image) and the harness reports the check as SKIP with the reason, rather
+  than calling a paywall a defect.
+- **`donor_reel` is unverified** — the probe asset is an image and the reel is a
+  video URL. Reported as SKIP, not FAIL.
+- **The webhook signature is implemented per the documentation** — see below.
 
 ### 2. Semantic search is lexical, not neural (bullet 5)
 
@@ -93,47 +114,30 @@ when credentials are configured, and it uses genuine server-side embeddings.
 The backend name is reported in every response and the local path is described
 as lexical in the response `notes`, so it is never presented as more than it is.
 
-### 3. The webhook signature scheme is deliberately unconfirmed
+### 3. The webhook signature: documented scheme, still not confirmed live
 
-`webhook_service.py` does not assert which construction Cloudinary uses for
-notification signatures. That is not an oversight: asserting a security
-construction from memory is how the Chave allometric "correction" happened, and a
-webhook is the one endpoint where getting it wrong lets an unauthenticated POST
-mark a fraudulent asset as verified. The scheme is a parameter, and
-`validate_cloudinary_live.py` step 9 prints the headers a real notification
-carries so it is established by observation.
+Cloudinary's documentation gives the construction explicitly:
 
-With `CLOUDINARY_WEBHOOK_SECRET` unset the processor **accepts unverified
-notifications** so the demo works. That is a deliberate, flagged degradation:
-`/health` reports `webhook_signature_enforced: false`, and the result's `reason`
-says verification was skipped.
+```
+signature = HEX( HASH( raw_body + X-Cld-Timestamp + api_secret ) )
+```
 
-### 4. S5 exit criteria are now asserted, not claimed
+A plain hash with the secret **concatenated on** — not HMAC — with the timestamp
+part of the signed string, in a header rather than the body, SHA-1 by default.
+`webhook_service.py` implemented `hmac(secret, body)` for all three of its
+schemes, so **it would have rejected every genuine notification it exists to
+accept.** Two of the three schemes were also byte-identical to each other.
 
-Two criteria, both executable so a later change fails CI instead of being
-noticed by whoever demos it next (`backend/tests/test_exit_criteria.py`):
+It now delegates to `cloudinary.utils.verify_notification_signature` — the vendor's
+own verifier — and falls back to a local implementation only when the SDK is
+absent or the configured secret is not the globally configured one (a dedicated
+webhook key would otherwise be verified against the wrong secret). A freshness
+window rejects replays.
 
-- **every response carries the provenance block** — `core/provenance.py`, applied
-  as middleware rather than a per-route helper, because a helper has to be
-  remembered and the criterion is that nobody forgets. In fixture mode the block
-  says the figures are synthetic and names the live-validation script.
-- **p95 on the compare route < 800 ms** — measured end to end through the app,
-  not just the service, because multipart parsing and serialisation are part of
-  what a user waits for.
-
-### 5. Auth is enforced on the mutating routes, and fails closed
-
-`core/auth.py` with `mrv:field_upload` / `mrv:triage_review` /
-`mrv:vvb_signoff`, mapped one-to-one onto roles with **no implicit escalation** —
-sign-off cannot upload, a field token cannot review. A missing signing key in
-production fails closed rather than degrading open, which is the opposite trade
-from every Cloudinary path in this codebase and is deliberate: a demo that runs
-unauthenticated is fine, a verification system that does so in production is a
-legal liability. `/health` reports the posture.
-
-The webhook route is deliberately **bearer-free**: Cloudinary cannot send a
-bearer token, it signs the body, and it does not retry a 401 — so bearer auth
-there would turn a gap into something that looks exactly like success.
+**Not yet confirmed against a real notification**, because Cloudinary has to POST
+to a publicly reachable URL. Step 9 of the harness reports the headers to watch
+for. Treat signature verification as unverified until that runs, and rely on the
+fixture-mode degradation meanwhile.
 
 ---
 

@@ -9,6 +9,8 @@ credentialed path degrades to a clearly-marked fixture rather than raising.
 
 from __future__ import annotations
 
+import os
+
 import json
 import urllib.parse
 
@@ -101,8 +103,13 @@ class TestUrlEngine:
         d = decoded(url)
         assert d.startswith(f"https://res.cloudinary.com/{CLOUD}/image/upload/")
         assert "c_crop,w_600,h_800,g_west" in d, "baseline must be the left half"
-        assert "fl_layer_apply,g_east" in d, "progress must overlay the right half"
-        assert "l_impact/KEN-042/warped_m18" in d
+        # Every folder separator in a layer reference becomes a COLON, and the
+        # gravity lives inside the l_ component. The previous form used
+        # fl_layer_apply -- an UPLOAD-time flag -- which Cloudinary rejected in a
+        # delivery URL with "Cannot find matching layer start".
+        assert "fl_layer_apply" not in d, "upload-time flag leaked into a delivery URL"
+        assert "l_impact:KEN-042:warped_m18" in d
+        assert "g_east" in d, "progress must overlay the right half"
         assert d.endswith("impact/KEN-042/raw_m0.jpg")
 
     def test_split_diff_burns_the_measured_delta(self):
@@ -153,7 +160,13 @@ class TestUrlEngine:
         d = decoded(build_audit_pdf_url(
             CLOUD, "impact/x/warp", "KEN-042", "Tsavo East", 8.42, 9.4, "a" * 64
         ))
-        assert d.endswith(".pdf"), "vector PDF output for a statutory filing"
+        # Built as `f_pdf` output from the warped image, not served as a .pdf
+        # template. Cloudinary does NOT composite text onto a `raw` PDF: verified
+        # live, `raw/upload/.../<template>` returns 200 with the ORIGINAL byte
+        # count, i.e. the layer stack is silently discarded. f_pdf is the only
+        # form that composites -- and it needs a paid plan (401 on free tier).
+        assert "f_pdf" in d, "vector PDF output for a statutory filing"
+        assert "/raw/upload/" not in d
         assert "EUDR Article 9" in d
         assert "SHA256:" in d
 
@@ -229,9 +242,33 @@ class TestMetadataSchema:
 
     def test_mandatory_field_required(self):
         payload = dict(VALID_METADATA)
-        del payload["jev_triage_decision"]
+        del payload["esg_project_id"]
         with pytest.raises(MetadataValidationError, match="mandatory"):
             validate_metadata(payload)
+
+    def test_analysis_outputs_are_optional(self):
+        """A verdict cannot be mandatory on an upload.
+
+        Cloudinary enforces a mandatory field on EVERY upload, so marking
+        `jev_triage_decision` or `jev_confidence_score` mandatory meant no upload
+        could ever succeed: the value is the result of analysing an asset that has
+        not been uploaded yet. Found by the live harness, which failed with
+        "Field 'jev_confidence_score' is mandatory and cannot be left empty".
+        """
+        for output in ("solar_azimuth_error", "jev_triage_decision",
+                       "jev_confidence_score", "sift_inlier_ratio",
+                       "canopy_delta_pct", "c2pa_provenance"):
+            payload = dict(VALID_METADATA)
+            payload.pop(output, None)
+            validate_metadata(payload)  # must not raise
+
+    def test_capture_time_facts_are_mandatory(self):
+        for field in ("esg_project_id", "sustainability_domain",
+                      "cadastral_polygon_id", "capture_timestamp", "milestone_phase"):
+            payload = dict(VALID_METADATA)
+            payload.pop(field, None)
+            with pytest.raises(MetadataValidationError, match="mandatory"):
+                validate_metadata(payload)
 
     def test_unknown_field_rejected(self):
         with pytest.raises(MetadataValidationError, match="Unknown metadata field"):
@@ -436,3 +473,32 @@ class TestSeeder:
 
     def test_summary_is_json_serialisable(self, tmp_path):
         json.dumps(seed(tmp_path).to_dict())
+
+
+class TestSuiteIsolation:
+    """The suite must run in fixture mode on a machine holding real credentials.
+
+    This is not hypothetical. `core.config` loads `backend/.env`, so a developer
+    (or CI) with credentials filled in got a DIFFERENT test run from one without:
+    the seeder uploaded 520 assets to a live account and the suite hung for ten
+    minutes. The conftest docstring already required that no test depend on a
+    credential; these assertions are what make that requirement enforced rather
+    than stated.
+    """
+
+    def test_runs_in_fixture_mode(self):
+        from core.config import get_settings
+
+        assert get_settings().mode == "fixture"
+        assert not get_settings().has_cloudinary_credentials
+
+    def test_dotenv_loading_is_disabled_for_tests(self):
+        assert os.environ.get("VERITAS_NO_DOTENV") == "1"
+
+    def test_a_client_reports_itself_unavailable(self):
+        from core.cloudinary_client import CloudinaryClient
+        from core.config import get_settings
+
+        client = CloudinaryClient(get_settings())
+        assert client.is_live is False
+        assert "not configured" in client._unavailable_reason()

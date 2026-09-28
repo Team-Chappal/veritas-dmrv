@@ -111,6 +111,18 @@ def _safe_text(value, label: str, max_length: int = MAX_TEXT_LENGTH) -> str:
         raise ValueError(
             f"{label} contains control characters, which cannot be rendered"
         )
+    if "\\" in text:
+        # Backslash is Cloudinary's ESCAPE character inside a transformation.
+        # A literal backslash-n is percent-encoded to %5Cn, decoded back to an
+        # escape by the delivery parser, and then treated as a COMPONENT
+        # BOUNDARY -- the remainder of the layer spec gets parsed as a
+        # public_id. It reached here because `\n` as two characters is not a
+        # control character, so the check above passed it.
+        raise ValueError(
+            f"{label} contains a backslash, which is the transformation escape "
+            "character and will split the layer specification. Use a separator "
+            "such as ' · ' instead."
+        )
     if len(text) > max_length:
         raise ValueError(
             f"{label} is {len(text)} characters, over the {max_length} limit for "
@@ -184,6 +196,19 @@ class CloudinaryResult:
 #: The authoritative schema, mirroring docs/04-DATA-AND-SCHEMA.md §2.
 #: Kept as data rather than in the bootstrap script so the schema can be
 #: validated in tests without a network call.
+# MANDATORY FIELDS ARE THE ONES KNOWN AT CAPTURE TIME, NOTHING ELSE.
+#
+# Cloudinary enforces a mandatory field on EVERY upload. Marking an analysis
+# OUTPUT as mandatory is a category error: `jev_triage_decision` is the verdict
+# reached by analysing an asset, so an upload that had to supply it could not
+# happen. The live harness found this by failing with "Field
+# 'jev_confidence_score' is mandatory and cannot be left empty".
+#
+# Mandatory (present when the officer presses capture):
+#   esg_project_id, sustainability_domain, capture_timestamp, milestone_phase
+# Optional (written by the pipeline after upload):
+#   solar_azimuth_error, jev_triage_decision, jev_confidence_score,
+#   sift_inlier_ratio, canopy_delta_pct, c2pa_provenance
 METADATA_SCHEMA: tuple = (
     {
         "external_id": "esg_project_id", "label": "Project Code", "type": "string",
@@ -193,10 +218,24 @@ METADATA_SCHEMA: tuple = (
     {
         "external_id": "sustainability_domain", "label": "Sector", "type": "enum",
         "mandatory": True,
-        "restrictions": {"values": [
-            "reforestation", "mangrove_restoration", "clean_water", "solar_microgrid",
-        ]},
-        "default_value": None,
+
+                # Cloudinary enums take a `datasource`, NOT restrictions.values.
+
+                # The latter returns 500 -- found by the live harness, not by reading.
+
+                "default_value": "reforestation",
+
+                "datasource": {"values": [
+
+                {"external_id": "reforestation", "value": "reforestation"},
+
+                {"external_id": "mangrove_restoration", "value": "mangrove_restoration"},
+
+                {"external_id": "clean_water", "value": "clean_water"},
+
+                {"external_id": "solar_microgrid", "value": "solar_microgrid"},
+
+                ]},
     },
     {
         "external_id": "cadastral_polygon_id", "label": "Geofence Plot",
@@ -210,20 +249,32 @@ METADATA_SCHEMA: tuple = (
     },
     {
         "external_id": "solar_azimuth_error", "label": "Shadow Angle Error",
-        "type": "integer", "mandatory": True,
+        "type": "integer", "mandatory": False,
         "restrictions": {"min": -180, "max": 180}, "default_value": None,
     },
     {
         "external_id": "jev_triage_decision", "label": "JEV Action", "type": "enum",
-        "mandatory": True,
-        "restrictions": {"values": [
-            "VERIFIED_PASS", "REVIEW_AMBIGUOUS", "QUARANTINE_FRAUD",
-        ]},
-        "default_value": None,
+        "mandatory": False,
+
+                # Cloudinary enums take a `datasource`, NOT restrictions.values.
+
+                # The latter returns 500 -- found by the live harness, not by reading.
+
+                "default_value": "VERIFIED_PASS",
+
+                "datasource": {"values": [
+
+                {"external_id": "VERIFIED_PASS", "value": "VERIFIED_PASS"},
+
+                {"external_id": "REVIEW_AMBIGUOUS", "value": "REVIEW_AMBIGUOUS"},
+
+                {"external_id": "QUARANTINE_FRAUD", "value": "QUARANTINE_FRAUD"},
+
+                ]},
     },
     {
         "external_id": "jev_confidence_score", "label": "RLCD Confidence",
-        "type": "integer", "mandatory": True,
+        "type": "integer", "mandatory": False,
         "restrictions": {"min": 0, "max": 100}, "default_value": None,
     },
     {
@@ -238,24 +289,60 @@ METADATA_SCHEMA: tuple = (
     },
     {
         "external_id": "c2pa_provenance", "label": "C2PA Status", "type": "enum",
-        "mandatory": True,
-        "restrictions": {"values": ["C2PA_VERIFIED", "C2PA_MISSING", "C2PA_MUTATED"]},
-        "default_value": None,
+        "mandatory": False,
+
+                # Cloudinary enums take a `datasource`, NOT restrictions.values.
+
+                # The latter returns 500 -- found by the live harness, not by reading.
+
+                "default_value": "C2PA_VERIFIED",
+
+                "datasource": {"values": [
+
+                {"external_id": "C2PA_VERIFIED", "value": "C2PA_VERIFIED"},
+
+                {"external_id": "C2PA_MISSING", "value": "C2PA_MISSING"},
+
+                {"external_id": "C2PA_MUTATED", "value": "C2PA_MUTATED"},
+
+                ]},
     },
     {
         "external_id": "milestone_phase", "label": "Reporting Epoch", "type": "enum",
         "mandatory": True,
-        "restrictions": {"values": [
-            "baseline_month_0", "progress_month_6", "progress_month_18",
-            "certified_year_3",
-        ]},
-        "default_value": None,
+
+                # Cloudinary enums take a `datasource`, NOT restrictions.values.
+
+                # The latter returns 500 -- found by the live harness, not by reading.
+
+                "default_value": "baseline_month_0",
+
+                "datasource": {"values": [
+
+                {"external_id": "baseline_month_0", "value": "baseline_month_0"},
+
+                {"external_id": "progress_month_6", "value": "progress_month_6"},
+
+                {"external_id": "progress_month_18", "value": "progress_month_18"},
+
+                {"external_id": "certified_year_3", "value": "certified_year_3"},
+
+                ]},
     },
 )
 
 
 class MetadataValidationError(ValueError):
     """A metadata payload does not satisfy the schema."""
+
+
+def _enum_values(spec: dict) -> Optional[set]:
+    """Allowed values for an enum field, or None if it is not an enum."""
+    if spec.get("type") != "enum":
+        return None
+    datasource = spec.get("datasource") or {}
+    values = {v.get("value") for v in datasource.get("values", []) if v.get("value")}
+    return values or None
 
 
 def validate_metadata(payload: dict) -> dict:
@@ -284,9 +371,15 @@ def validate_metadata(payload: dict) -> dict:
         value = payload[field_name]
         restrictions = spec.get("restrictions") or {}
 
-        if "values" in restrictions and value not in restrictions["values"]:
+        # An enum's allowed values live in `datasource.values`, which is the
+        # shape Cloudinary actually accepts. The old check read
+        # `restrictions.values` and stopped matching anything once the schema
+        # moved to a datasource -- so local validation silently stopped
+        # enforcing enum membership while still appearing to.
+        allowed = _enum_values(spec)
+        if allowed is not None and value not in allowed:
             raise MetadataValidationError(
-                f"{field_name}={value!r} is not one of {restrictions['values']}"
+                f"{field_name}={value!r} is not one of {sorted(allowed)}"
             )
         if "regex" in restrictions and not re.match(restrictions["regex"], str(value)):
             raise MetadataValidationError(
@@ -321,6 +414,46 @@ def validate_metadata(payload: dict) -> dict:
 # where the rubric's "campaign-ready content" and "visual reports" are produced.
 
 
+#: Delivery font. MUST be a font that exists on Cloudinary's servers.
+#:
+#: The original hardcoded "Inter" and every text overlay returned HTTP 400
+#: `Unsupported font family Inter`. Cloudinary only serves a fixed built-in set
+#: plus fonts explicitly uploaded via the Admin API; "Inter" and "Open Sans" are
+#: in neither. Verified present on a live account: Lato, Arial, Helvetica,
+#: Courier, Times, Georgia, Verdana, Roboto, Montserrat, Poppins.
+#:
+#: To use Inter, upload it: cloudinary.uploader.upload_font("Inter", path, ...).
+#: Until then, a font that 400s is worse than a font that is merely plain.
+DELIVERY_FONT = "Lato"
+
+
+def _font(spec: str) -> str:
+    """Prefix a weight/size spec with :data:`DELIVERY_FONT`."""
+    return spec if spec.startswith(f"{DELIVERY_FONT}_") else f"{DELIVERY_FONT}_{spec}"
+
+
+def overlay_ref(public_id: str) -> str:
+    """Reference a folder-qualified asset from a `l_` layer.
+
+    Cloudinary uses a COLON, not a slash, to separate folder from asset name in a
+    layer reference. A slash does not merely render wrong -- the delivery parser
+    treats everything after `l_` up to the next component boundary as the
+    public_id, so `l_folder/name/img.jpg` seeks an asset literally called
+    `name/img` and 404s. Verified against a live account: `l_vf:w` renders,
+    `l_vf/w` does not.
+
+    EVERY separator becomes a colon, not just the last one. Verified live:
+
+        single level   l_vf:w          -> 200
+        two levels     l_ml:deep:w     -> 200
+        last only      l_ml/deep:w     -> 404 (seeks `deep:w,g_east/...`)
+
+    ``%2F`` does not help either: Cloudinary does not decode it inside a layer
+    id, so it searches for an asset whose public_id contains a literal ``%2F``.
+    """
+    return public_id.replace("/", ":")
+
+
 def _l_text_layer(text: str, font: str, style: str, gravity: str, x: int, y: int) -> str:
     """Build a `l_text:` layer component with URL-encoded content.
 
@@ -331,6 +464,16 @@ def _l_text_layer(text: str, font: str, style: str, gravity: str, x: int, y: int
     _safe_component(font, "font")
     _safe_component(style, "style")
     _safe_component(gravity, "gravity")
+    # A slash in overlay text ends the layer, even percent-encoded: the delivery
+    # parser decodes %2F back to / before splitting components, so "tCO2e/ha"
+    # truncated the layer and the remainder was parsed as a public_id. Rejecting
+    # it here turns a silently broken URL into a loud error at composition time.
+    if "/" in str(text):
+        raise ValueError(
+            "overlay text may not contain '/': Cloudinary decodes it before "
+            "parsing the layer, so it terminates the component. Write "
+            "'tCO2e per ha' instead of 'tCO2e/ha'."
+        )
     encoded = urllib.parse.quote(str(text), safe="")
     return f"l_text:{font}:{encoded},{style},g_{gravity},x_{x},y_{y}"
 
@@ -376,11 +519,11 @@ def build_split_diff_url(
     components = [
         f"c_fill,w_{width},h_{height}",
         f"c_crop,w_{half},h_{height},g_west",
-        f"l_{warp}/c_fill,w_{width},h_{height}/c_crop,w_{half},h_{height},g_east/fl_layer_apply,g_east",
-        _text_layer(baseline_label, font="Inter_22_bold",
-                    style="co_white,b_rgb:000000_80", gravity="north_west", x=30, y=30),
-        _text_layer(progress_label, font="Inter_22_bold",
-                    style="co_white,b_rgb:059669_90", gravity="north_east", x=30, y=30),
+        f"l_{overlay_ref(warp)}/c_fill,w_{width},h_{height}/c_crop,w_{half},h_{height},g_east",
+        _text_layer(baseline_label, font=_font("22_bold"),
+                    style="co_white,b_rgb:00000080", gravity="north_west", x=30, y=30),
+        _text_layer(progress_label, font=_font("22_bold"),
+                    style="co_white,b_rgb:05966990", gravity="north_east", x=30, y=30),
     ]
 
     delta_text = f"{canopy_delta_pct:+.1f}% CANOPY EXPANSION"
@@ -389,8 +532,8 @@ def build_split_diff_url(
     if certificate_note:
         delta_text += f" | {certificate_note}"
     components.append(
-        _text_layer(delta_text, font="Inter_26_black",
-                    style="co_white,b_rgb:064e3b_95", gravity="south", x=30, y=30)
+        _text_layer(delta_text, font=_font("26_black"),
+                    style="co_white,b_rgb:064e3b95", gravity="south", x=30, y=30)
     )
     components.append("f_auto,q_auto:good")
 
@@ -427,9 +570,9 @@ def build_donor_reel_url(
     if preview_seconds and preview_seconds > 0:
         components.insert(1, f"e_preview:duration_{preview_seconds}:max_seg_3")
     components += [
-        _text_layer(headline, font="Inter_34_black", style="co_white,b_rgb:059669",
+        _text_layer(headline, font=_font("34_black"), style="co_white,b_rgb:059669",
                     gravity="north", x=0, y=80),
-        _text_layer(subline, font="Inter_24_bold", style="co_white",
+        _text_layer(subline, font=_font("24_bold"), style="co_white",
                     gravity="south", x=0, y=60),
         "f_auto,q_auto",
     ]
@@ -461,17 +604,17 @@ def build_impact_certificate_url(
 
     components = [
         f"w_{width},h_{height},c_fill,b_rgb:030712",
-        _text_layer("VERITAS dMRV IMPACT CERTIFICATE", font="Inter_42_black",
+        _text_layer("VERITAS dMRV IMPACT CERTIFICATE", font=_font("42_black"),
                     style="co_white", gravity="north", x=0, y=60),
-        _text_layer(f"Project: {project_name}", font="Inter_24_bold",
-                    style="co_emerald_400", gravity="north", x=0, y=130),
+        _text_layer(f"Project: {project_name}", font=_font("24_bold"),
+                    style="co_rgb:10b981", gravity="north", x=0, y=130),
         _text_layer("Verified under EU CSRD ESRS E4 and Verra VM0047",
-                    font="Inter_20", style="co_slate_300", gravity="north", x=0, y=170),
-        f"l_{warp}/w_450,h_300,c_fill,r_12/fl_layer_apply,g_west,x_60,y_40",
-        _text_layer(f"{canopy_delta_pct:+.1f}% CANOPY", font="Inter_36_black",
+                    font=_font("20"), style="co_rgb:7d8998", gravity="north", x=0, y=170),
+        f"l_{overlay_ref(warp)},w_450,h_300,c_fill,r_12,g_west,x_60,y_40",
+        _text_layer(f"{canopy_delta_pct:+.1f}% CANOPY", font=_font("36_black"),
                     style="co_white,b_rgb:059669", gravity="east", x=120, y=0),
-        _text_layer(f"C2PA Root Hash: {c2pa_root_hash[:16]}", font="Inter_18_mono",
-                    style="co_slate_400", gravity="south", x=0, y=40),
+        _text_layer(f"C2PA Root Hash: {c2pa_root_hash[:16]}", font=_font("18_mono"),
+                    style="co_rgb:9aa5b1", gravity="south", x=0, y=40),
         "f_auto,q_auto",
     ]
     return (
@@ -505,26 +648,42 @@ def build_audit_pdf_url(
     ):
         _safe_text(value, label)
 
+    # Separated with a middot, NOT a newline escape. A literal backslash-n is
+    # percent-encoded to %5Cn, which Cloudinary decodes back to an escape and
+    # then treats as a COMPONENT BOUNDARY -- the rest of the layer spec was
+    # parsed as a public_id and the URL failed with `public_id (...) is invalid`.
     detail = (
-        f"Parcel ID: {project_id}\\nRegion: {region}\\n"
-        f"Biomass Gain: {tco2e_per_ha:+.2f} tCO2e/ha\\n"
+        f"Parcel ID: {project_id} · Region: {region} · "
+        f"Biomass Gain: {tco2e_per_ha:+.2f} tCO2e per ha · "
         f"Sampling CI90: {sampling_ci90:.1f}%"
     )
     components = [
-        _text_layer("VERITAS dMRV AUDIT DOSSIER", font="Inter_38_bold",
+        _text_layer("VERITAS dMRV AUDIT DOSSIER", font=_font("38_bold"),
                     style="co_white", gravity="north", x=0, y=50),
         _text_layer("Statutory CSRD ESRS E4 and EUDR Article 9 Verification",
-                    font="Inter_20", style="co_white", gravity="north", x=0, y=100),
-        f"l_{warp}/w_500,h_320,c_fill,r_8/fl_layer_apply,g_west,x_50,y_0",
-        _text_layer(detail, font="Inter_18_bold", style="co_white",
+                    font=_font("20"), style="co_white", gravity="north", x=0, y=100),
+        f"l_{overlay_ref(warp)},w_500,h_320,c_fill,r_8,g_west,x_50,y_0",
+        _text_layer(detail, font=_font("18_bold"), style="co_white",
                     gravity="east", x=80, y=0),
-        _text_layer(f"SHA256: {root_hash[:32]}", font="Inter_14_mono",
-                    style="co_slate_400", gravity="south_west", x=0, y=50),
+        _text_layer(f"SHA256: {root_hash[:32]}", font=_font("14_mono"),
+                    style="co_rgb:9aa5b1", gravity="south_west", x=0, y=50),
     ]
+    # Emitted as an IMAGE delivery producing PDF output, because that is the only
+    # form in which Cloudinary actually composites the layer stack:
+    #
+    #   * `raw/upload/.../<template>.pdf`  -> 404 (raw assets carry no extension)
+    #   * `raw/upload/.../<template>`      -> 200 but 632 B, i.e. the ORIGINAL
+    #     file delivered unchanged. The text layers are silently ignored.
+    #   * `image/upload/.../f_pdf/<image>` -> the layers composite into a PDF,
+    #     but returns 401 "deny or ACL failure" on a free plan.
+    #
+    # So the mechanism is `f_pdf`, and it is PLAN-DEPENDENT. Verified by
+    # observation on a live free-tier account; see docs/RUBRIC-TRACEABILITY.md.
+    components.append("f_pdf")
     return (
         f"https://res.cloudinary.com/{cloud_name}/image/upload/"
         + "/".join(components)
-        + f"/{template}.pdf"
+        + f"/{warp}.jpg"
     )
 
 
@@ -542,7 +701,13 @@ class CloudinaryClient:
         self._init_error: Optional[str] = None
         if self._settings.has_cloudinary_credentials:
             try:
+                # Submodules are NOT auto-imported: `import cloudinary` gives no
+                # `cloudinary.uploader` and no `cloudinary.api`. Both are used
+                # below, and the AttributeError only surfaces at the first live
+                # call rather than at init.
                 import cloudinary
+                import cloudinary.api  # noqa: F401  (metadata admin API)
+                import cloudinary.uploader  # noqa: F401  (upload/explicit)
 
                 cloudinary.config(
                     cloud_name=self._settings.cloudinary_cloud_name,
@@ -580,6 +745,20 @@ class CloudinaryClient:
 
     # -- schema ------------------------------------------------------------ #
 
+    def _schema_failure(self, external_id: str, exc: Exception) -> CloudinaryResult:
+        """A failed live call must not come back marked live.
+
+        ``fixture=True`` is the flag the harness and the callers read to decide
+        whether a value came from Cloudinary. A result that carries an error but
+        says ``fixture=False`` is worse than no result: it passes every
+        "did it work?" check and still hands back nothing usable.
+        """
+        return CloudinaryResult.stubbed(
+            {"error": f"{external_id}: {type(exc).__name__}: {exc}"},
+            f"structured-metadata bootstrap failed at field {external_id!r}. "
+            "The account schema is unchanged or partial; do not trust it.",
+        )
+
     def ensure_metadata_schema(self) -> CloudinaryResult:
         """Create or update the structured-metadata fields. Idempotent.
 
@@ -593,23 +772,24 @@ class CloudinaryClient:
                 self._unavailable_reason(),
             )
         try:
+            # List first, then create-or-update. Not exception-driven control
+            # flow: the SDK raises BadRequest (not AlreadyExists) for a duplicate
+            # external_id, so catching the "right" error class silently degrades
+            # into create-fails-then-update on every re-run. One list call is
+            # also cheaper than 11 speculative creates.
+            existing = {
+                f["external_id"]: f
+                for f in self._sdk.api.list_metadata_fields().get("metadata_fields", [])
+            }
             created, updated = 0, 0
             for spec in METADATA_SCHEMA:
-                try:
-                    self._sdk.admin.metadata_fields_create(spec)
+                eid = spec["external_id"]
+                if eid in existing:
+                    self._sdk.api.update_metadata_field(eid, spec)
+                    updated += 1
+                else:
+                    self._sdk.api.add_metadata_field(spec)
                     created += 1
-                except Exception:
-                    # Already exists: update in place.
-                    try:
-                        self._sdk.admin.metadata_fields_update(
-                            spec["external_id"], spec
-                        )
-                        updated += 1
-                    except Exception as exc:
-                        return CloudinaryResult.live(
-                            {"error": f"{spec['external_id']}: {exc}"},
-                            warnings=[f"schema field {spec['external_id']} failed"],
-                        )
             return CloudinaryResult.live(
                 {"fields": len(METADATA_SCHEMA), "created": created, "updated": updated}
             )
@@ -641,7 +821,12 @@ class CloudinaryClient:
                 self._unavailable_reason(),
             )
         try:
-            self._sdk.update_metadata(pid, validated)
+            # Signature is update_metadata(metadata, public_ids, **options) --
+            # metadata FIRST. The old self._sdk.update_metadata(pid, validated)
+            # both used a non-existent path and had the arguments reversed.
+            import cloudinary.uploader
+
+            cloudinary.uploader.update_metadata(validated, [pid])
             return CloudinaryResult.live(
                 {"public_id": pid, "fields_written": sorted(validated)}
             )
@@ -667,7 +852,11 @@ class CloudinaryClient:
                 self._unavailable_reason(),
             )
         try:
-            response = self._sdk.search.expression(expression) \
+            # `cloudinary.search` is a module, not a callable. The real entry
+            # point is the Search class, which is chained fluently.
+            from cloudinary import Search
+
+            response = Search().expression(expression) \
                 .max_results(max_results).execute()
             return CloudinaryResult.live(
                 {
@@ -696,15 +885,18 @@ class CloudinaryClient:
                 self._unavailable_reason(),
             )
         try:
-            response = self._sdk.api_client.call_api(
-                "get",
-                [f"resources/image/upload/{pid}"],
-                params={"transformations": True},
-            )
+            import cloudinary.api
+
+            response = cloudinary.api.resource(pid, transformations=True)
             return CloudinaryResult.live(
                 {
                     "public_id": pid,
-                    "transformations": response.get("transformations", []),
+                    # Cloudinary reports these as `derived`; there is no
+                    # `transformations` key on a resource, so the old read
+                    # silently returned an empty list forever.
+                    "transformations": response.get("derived", []),
+                    "bytes": response.get("bytes"),
+                    "format": response.get("format"),
                 }
             )
         except Exception as exc:
