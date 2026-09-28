@@ -2,32 +2,41 @@
 
 ## 1. Never push directly to `main`
 
-All work lands on a feature branch, is pushed, and is proposed as a pull
-request. **The repository owner reviews and merges.** An agent opening a PR is
-not the same thing as that change being accepted.
+All work lands on a feature branch, is pushed, and goes through a pull request.
+The branch exists so the change is **reviewable and revertible as a unit** — not
+as a gate someone has to wait at.
 
 ```
 git switch -c <type>/<short-description>   # e.g. fix/solar-fixture-margin
 # ... work, commit on the branch ...
 git push -u origin <branch>
 gh pr create --base main --title "..." --body "..."
-# then STOP and report the PR URL for review
+# wait for CI, then merge the PR yourself (section 2)
+gh pr merge <n> --squash --delete-branch
 ```
 
 `main` is expected to stay green at all times, so a PR should be reviewable on
 its own. If a change needs two unrelated things, that is two PRs.
 
-## 2. Report the PR and stop
+## 2. Raise the PR, then merge it
 
-After opening a PR, the agent's job is done for that unit of work. Report:
+**The agent opens the PR and merges it once CI is green.** The repository owner
+is not required to review first; review remains available and encouraged, but
+blocking on it costs more than it protects. The owner may also ask for a walk
+through of the diff before merging, and that request is always honoured.
 
-- the PR URL,
+After merging, report to the owner:
+
+- the PR URL and the merge commit,
 - what the change does,
 - what was **verified** versus merely asserted,
-- anything the owner must decide.
+- anything the owner must decide or supply.
 
-Do not merge. Do not push follow-up commits to `main` to "fix CI after the
-fact" — push another commit to the same branch instead.
+Then start the next unit of work from the updated `main`.
+
+Never push follow-up commits to `main` to "fix CI after the fact". If a merged
+change turns out to be wrong, that is a new branch and a new PR, so the
+correction is itself auditable.
 
 ## 3. Branch naming
 
@@ -51,6 +60,23 @@ fact" — push another commit to the same branch instead.
    codebase that hides its corrections cannot be trusted about the rest.
 5. **What is not done**, and why.
 
+## 5. Merge preconditions
+
+Merging is the agent's call, so the bar has to be written down. Merge only when
+all of these hold:
+
+- [ ] Every required check on the PR is green — read the actual check list, do
+      not assume
+- [ ] `make verify`, `make lint` and `scripts/verify_docs.py` pass locally
+- [ ] The PR body states verified vs. asserted, and lists what is **not** done
+- [ ] `git diff main...HEAD --stat` contains nothing unintended: no secrets, no
+      large binaries, no unrelated edits
+- [ ] Fixture-mode degradation still works with Cloudinary credentials unset
+
+If a check is red, fix it on the branch and re-run CI. If a check cannot be made
+green without credentials or a decision from the owner, leave the PR open and
+ask — do not merge a red or knowingly-incomplete change to keep moving.
+
 ## 6. Definition of done for a PR
 
 - [ ] `make verify` passes locally (fixture freshness + full suite)
@@ -61,6 +87,7 @@ fact" — push another commit to the same branch instead.
 - [ ] Fixture-mode degradation still works with Cloudinary credentials unset
 - [ ] Any new threshold or constant is justified by a measurement, in a comment
       or a test, not asserted
+- [ ] PR merged, and `main` green
 
 ## 7. Evidence standard
 
