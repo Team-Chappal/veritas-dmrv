@@ -132,20 +132,9 @@ class TestConfigDegradation:
 # =========================================================================== #
 
 
-@pytest.fixture(scope="module")
-def client(auth_headers):
-    """Authenticated by default. Tests for 401/403 use ``anon_client``."""
-    import mock_server
-
-    return TestClient(mock_server.app, headers=auth_headers)
-
-
-@pytest.fixture(scope="module")
-def anon_client():
-    """No credentials at all — for asserting the unauthenticated path."""
-    import mock_server
-
-    return TestClient(mock_server.app)
+# `client` (authenticated) and `anon_client` live in conftest.py: several test
+# modules need the unauthenticated client, and a fixture defined here is only
+# visible to this module.
 
 
 #: The exact payload docs/05-API-SPEC.md §1.2 publishes as a successful triage.
