@@ -73,14 +73,25 @@ try:
     import numpy as np
 
     from services.canopy_service import compute_canopy_metrics
+    from services.enrichment_service import enrich_asset
     from services.forgery_service import detect_synthetic_media, ForgeryAction
     from services.homography_service import register_field_pair
+    from services.narrative_service import ProjectFacts, build_grounded_summary
+    from services.query_service import QueryCompilationError, compile_query
+    from services.semantic_service import SemanticIndex, build_index_document
+    from services.timeline_service import AssetRecord, build_timeline
 
     FORGERY_AVAILABLE = True
     CV_AVAILABLE = True
+    S3_AVAILABLE = True
+except ImportError:  # pragma: no cover - enrichment deps missing
+    FORGERY_AVAILABLE = False
+    CV_AVAILABLE = False
+    S3_AVAILABLE = False
 except Exception:  # pragma: no cover - opencv missing
     FORGERY_AVAILABLE = False
     CV_AVAILABLE = False
+    S3_AVAILABLE = False
     ForgeryAction = None  # type: ignore[assignment]
 
 
@@ -148,6 +159,11 @@ def health() -> dict:
             "forgery_detection": FORGERY_AVAILABLE,
             "photogrammetry": CV_AVAILABLE,
             "canopy_quantification": CV_AVAILABLE,
+            "auto_tagging": S3_AVAILABLE,
+            "semantic_search": S3_AVAILABLE,
+            "narrative_summaries": S3_AVAILABLE,
+            "timeline": S3_AVAILABLE,
+            "semantic_backend": _semantic_index().backend_name,
             "note": (
                 "Photogrammetry and canopy quantification run for real when "
                 "OpenCV is installed. Set VERITAS_STUB_CV=1 for canned values."
@@ -484,29 +500,164 @@ def audit_dossier(project_id: str) -> dict:
     }
 
 
-# --------------------------------------------------------------------------- #
-# Endpoint 4 — Search (needed for the rubric's semantic-discovery surface)
-# --------------------------------------------------------------------------- #
-
-
-@app.get("/v1/search")
-def search(
-    q: str = "",
-    project_id: Optional[str] = None,
-    phase: Optional[str] = None,
-    max_results: int = 20,
-) -> dict:
-    """Stubbed search returning a Lucene-shaped response."""
-    return {
-        "mode": "MOCK",
-        "query": q,
-        "total_count": 0,
-        "resources": [],
-        "note": "STUBBED — Stage 3 implements real structured + semantic search.",
-    }
-
-
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
+
+
+# --------------------------------------------------------------------------- #
+# Stage 3 — enrichment, semantic search, narratives, timeline
+# --------------------------------------------------------------------------- #
+
+_SEMANTIC_INDEX = None
+
+
+def _semantic_index():
+    """Lazily seeded so the index is shared across requests."""
+    global _SEMANTIC_INDEX
+    if _SEMANTIC_INDEX is None:
+        from core.config import get_settings
+
+        _SEMANTIC_INDEX = SemanticIndex.from_settings(get_settings())
+        _SEMANTIC_INDEX.add_many(_demo_index_documents())
+    return _SEMANTIC_INDEX
+
+
+def _demo_index_documents() -> list:
+    """A small fixture corpus so search returns something before seeding.
+
+    Replaced wholesale by `make seed` once a real corpus is staged. Kept
+    deterministic and dependency-free so the demo works with no credentials.
+    """
+    from services.semantic_service import build_index_document as _doc
+
+    corpus = [
+        ("demo/mangrove-m0", ["canopy", "mangrove", "bare_soil", "ground_level"], "KEN-08", 0.0, "2025-03-14"),
+        ("demo/mangrove-m18", ["canopy", "mangrove", "water", "wetland", "restoration_site"], "KEN-08", 38.2, "2026-09-20"),
+        ("demo/mangrove-m36", ["canopy", "mangrove", "tidal", "water", "restoration_site"], "KEN-08", 52.4, "2028-03-18"),
+        ("demo/pine-m0", ["bare_soil", "overcast", "ground_level"], "TUR-101", 0.0, "2019-11-11"),
+        ("demo/pine-m12", ["bare_soil", "forest", "dryland", "overcast"], "TUR-101", -12.5, "2020-11-11"),
+        ("demo/solar-array", ["infrastructure", "urban", "harsh_sun", "bare_soil"], "ESP-200", 0.0, "2026-06-02"),
+        ("demo/river-survey", ["water", "wetland", "infrastructure", "sky"], "ESP-200", 4.2, "2026-07-15"),
+    ]
+    return [
+        _doc(asset_id, tags, project_id=project, canopy_delta_pct=delta, capture_date=when)
+        for asset_id, tags, project, delta, when in corpus
+    ]
+
+
+@app.post("/v1/media/analyse")
+@app.post("/api/v1/media/analyse")
+async def analyse_media(image: UploadFile = File(...)) -> dict:
+    """Auto-tag a single asset from its pixels (rubric bullet 2).
+
+    Returns the tags AND the measurements behind them, so a reviewer can check
+    the reasoning rather than trusting a label.
+    """
+    if not S3_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Enrichment unavailable (needs OpenCV).")
+    if not image or not image.filename:
+        raise HTTPException(status_code=422, detail="An image file is required.")
+    data = await image.read()
+    try:
+        img = _decode_rgb(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return enrich_asset(img, asset_id=image.filename or "asset").to_dict()
+
+
+# NOTE: this replaces a stubbed `/v1/search` that returned an empty result set.
+# FastAPI resolves duplicate paths by first registration, so the earlier stub was
+# shadowing this route and had to be removed rather than overwritten.
+@app.get("/v1/search")
+@app.get("/api/v1/search")
+def search(
+    q: str = "",
+    project_id: Optional[str] = None,
+    tags: Optional[str] = None,
+    k: int = 10,
+) -> dict:
+    """Semantic search over indexed media (rubric bullet 5)."""
+    if not S3_AVAILABLE:
+        return {
+            "mode": "MOCK",
+            "query": q,
+            "count": 0,
+            "hits": [],
+            "note": "STUBBED — enrichment unavailable.",
+        }
+    index = _semantic_index()
+    index.add_many(_demo_index_documents())
+
+    if q and not project_id and not tags:
+        # Structured query compilation takes precedence for constraint-shaped
+        # questions; the semantic path handles everything else.
+        try:
+            compiled = compile_query(q)
+            # Route on specificity. A query that compiles to nothing but a
+            # broad domain synonym ("mangrove restoration with canopy") is a
+            # discovery question; answering it with a filter and zero hits is
+            # worse than useless.
+            if not compiled.is_specific:
+                raise QueryCompilationError(
+                    "compiled, but not specific enough to answer as a filter"
+                )
+            return {
+                "mode": "MOCK",
+                "route": "structured",
+                **compiled.to_dict(),
+                "hits": [],
+                "note": (
+                    "Query compiled to a validated Lucene expression. Against a "
+                    "live Cloudinary account this is executed by the Search API; "
+                    "the mock returns the compiled expression for inspection."
+                ),
+            }
+        except QueryCompilationError:
+            pass
+
+    response = index.search(
+        q, k=k, project_id=project_id, tags=tags.split(",") if tags else None
+    )
+    return {"mode": "MOCK", "route": "semantic", **response.to_dict()}
+
+
+@app.get("/v1/projects/{project_id}/summary")
+@app.post("/api/v1/projects/{project_id}/summary")
+def project_summary(project_id: str) -> dict:
+    """Grounded project summary (rubric bullet 4)."""
+    if not S3_AVAILABLE:
+        return {"mode": "MOCK", "note": "STUBBED — narrative unavailable."}
+    facts = ProjectFacts(
+        project_id=project_id,
+        project_name="Kilifi Creek Mangrove Restoration",
+        total_assets=148, verified_assets=131, review_assets=12, quarantined_assets=5,
+        canopy_delta_pct=38.2, baseline_canopy_px=142100, progress_canopy_px=196420,
+        mean_inlier_ratio=0.845, estimated_tco2e_per_ha=8.42, area_ha=14.5,
+        sampling_error_pct=8.7, net_certified_tco2e=8.42,
+        domain="mangrove_restoration",
+        timeline_epochs=["2025-03", "2025-09", "2026-03", "2026-09"],
+        coverage_gaps=[{"label": "2025-09", "expected_assets": 3, "observed_assets": 0}],
+        top_tags=["canopy", "mangrove", "water"],
+    )
+    return {"mode": "MOCK", "facts": facts.to_dict(), **build_grounded_summary(facts)}
+
+
+@app.get("/v1/projects/{project_id}/timeline")
+@app.get("/api/v1/projects/{project_id}/timeline")
+def project_timeline(project_id: str) -> dict:
+    """Monitoring timeline and coverage gaps (brief intro requirement)."""
+    if not S3_AVAILABLE:
+        return {"mode": "MOCK", "note": "STUBBED — timeline unavailable."}
+    assets = [
+        AssetRecord(f"ken-{i}", __import__("datetime").date.fromisoformat(d),
+                    p, "VERIFIED_PASS", delta)
+        for i, (d, p, delta) in enumerate([
+            ("2025-03-15", "baseline_month_0", 0.0), ("2025-03-15", "baseline_month_0", 0.0),
+            ("2025-03-16", "baseline_month_0", 0.0), ("2025-09-15", "progress_month_6", 12.0),
+            ("2025-09-15", "progress_month_6", 12.4), ("2026-09-20", "progress_month_18", 38.2),
+            ("2026-09-20", "progress_month_18", 38.0), ("2026-09-21", "progress_month_18", 38.5),
+        ])
+    ]
+    return {"mode": "MOCK", **build_timeline(project_id, assets).to_dict()}

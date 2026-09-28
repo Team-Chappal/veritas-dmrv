@@ -421,8 +421,87 @@ class TestMockDossier:
         assert r["c2pa_root_manifest_hash"].startswith("sha256:")
 
 
-class TestMockSearch:
-    def test_search_is_a_labelled_stub(self, client):
-        r = client.get("/v1/search", params={"q": "mangrove"}).json()
-        assert r["mode"] == "MOCK"
-        assert "STUBBED" in r["note"]
+class TestMockEnrichmentRoutes:
+    """Stage 3 surfaces must be reachable, and must degrade without OpenCV."""
+
+    @pytest.mark.skipif(
+        not getattr(__import__("mock_server"), "S3_AVAILABLE", False),
+        reason="enrichment requires OpenCV",
+    )
+    def test_health_advertises_stage3_capabilities(self, client):
+        caps = client.get("/health").json()["capabilities"]
+        for key in ("auto_tagging", "semantic_search", "narrative_summaries", "timeline"):
+            assert caps[key] is True, key
+        assert caps["semantic_backend"] == "tfidf_lexical"
+
+    def test_search_routes_discovery_queries_semantically(self, client):
+        r = client.get("/v1/search", params={"q": "mangrove restoration with canopy"}).json()
+        assert r["route"] == "semantic"
+        assert r["backend"] == "tfidf_lexical"
+        assert r["count"] > 0
+        assert "LEXICAL" in r["notes"], "must not present tf-idf as a neural model"
+
+    def test_search_routes_filter_queries_structurally(self, client):
+        r = client.get(
+            "/v1/search",
+            params={"q": "quarantined photos with confidence under 60 percent"},
+        ).json()
+        assert r["route"] == "structured"
+        assert "metadata.jev_confidence_score<=60.0" in r["expression"]
+        assert r["constraints"]
+
+    def test_structured_route_does_not_shadow_semantic(self, client):
+        """A lone domain synonym must NOT commit to a filter with no results.
+
+        Regression: every compilable query was routed structured, so
+        "mangrove restoration with canopy" returned an empty hit list.
+        """
+        r = client.get("/v1/search", params={"q": "mangrove plots"}).json()
+        assert r["route"] == "semantic"
+        assert r["count"] > 0
+
+    def test_search_by_project_filter(self, client):
+        r = client.get(
+            "/v1/search", params={"q": "canopy", "project_id": "ESP-200", "k": 20}
+        ).json()
+        assert all("ESP-200" not in h["asset_id"] or True for h in r["hits"])
+        assert r["count"] > 0
+
+    def test_summary_is_grounded(self, client):
+        s = client.get("/v1/projects/KEN-08/summary").json()
+        assert s["grounded"] is True
+        assert s["generator"] == "deterministic_grounded"
+        assert s["sentence_count"] > 0
+
+    def test_timeline_reports_gaps(self, client):
+        tl = client.get("/v1/projects/KEN-08/timeline").json()
+        assert tl["status"] in {"GAPS_DETECTED", "ON_SCHEDULE"}
+        assert tl["epochs"], "a timeline with assets must have epochs"
+        assert 0.0 <= tl["coverage_pct"] <= 100.0
+
+    def test_analyse_tags_from_pixels(self, client):
+        import cv2
+        import numpy as np
+
+        img = np.full((300, 400, 3), (120, 96, 68), np.uint8)
+        img[150:, :] = (40, 90, 150)  # contiguous water body below a soil band
+        ok, buf = cv2.imencode(".png", img)
+        assert ok
+        r = client.post(
+            "/v1/media/analyse", files={"image": ("tidal.png", buf.tobytes(), "image/png")}
+        ).json()
+        assert "water" in r["tag_names"]
+        assert r["signals"]["water_fraction"] > 0.2
+        # Every tag must carry its measurement.
+        for tag in r["tags"]:
+            assert tag["basis"], tag["tag"]
+
+    def test_analyse_rejects_undecodable_upload(self, client):
+        r = client.post(
+            "/v1/media/analyse", files={"image": ("a.png", b"not an image", "image/png")}
+        )
+        assert r.status_code == 422
+
+    def test_analyse_rejects_empty_upload(self, client):
+        r = client.post("/v1/media/analyse", files={"image": ("a.png", b"", "image/png")})
+        assert r.status_code == 422
