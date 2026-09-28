@@ -11,6 +11,29 @@ from __future__ import annotations
 import os
 from typing import Callable
 
+# The suite must run in FIXTURE mode whatever the developer's shell or .env
+# says. `core.config` loads backend/.env, so filling in real credentials would
+# otherwise flip the whole suite to live: the fixture-degradation tests would make
+# network calls (and hang), and a developer with credentials would get a
+# different test run from a developer without. Opt in explicitly instead:
+#
+#   VERITAS_LIVE_TESTS=1 pytest backend/tests/test_live.py
+#
+# This module's own docstring already required it -- "no test may depend on a
+# Cloudinary credential" -- and adding .env support broke that silently.
+# Must be set before core.config is imported, or _load_env_files() re-populates
+# them from backend/.env during the import.
+os.environ["VERITAS_NO_DOTENV"] = "1"
+
+for _var in (
+    "CLOUDINARY_CLOUD_NAME",
+    "CLOUDINARY_API_KEY",
+    "CLOUDINARY_API_SECRET",
+    "CLOUDINARY_WEBHOOK_SECRET",
+):
+    os.environ.pop(_var, None)
+os.environ.setdefault("APP_ENV", "development")
+
 # Rate limiting is configured at 60/min, which a suite making hundreds of
 # requests would blow through -- and a global counter shared across tests would
 # make unrelated tests fail by execution order. Raise the ceiling before any

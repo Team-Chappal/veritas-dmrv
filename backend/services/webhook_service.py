@@ -38,16 +38,48 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import time
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 from typing import Optional
 
 #: Header Cloudinary has used to carry a notification signature.
+#: The scheme Cloudinary documents, from
+#: cloudinary.com/documentation/notification_signatures:
+#:
+#:     signature = HEX( HASH( raw_body + X-Cld-Timestamp + api_secret ) )
+#:
+#: Three things this is NOT, all of which this module previously got wrong:
+#:
+#:   * not HMAC. It is a plain hash with the secret CONCATENATED ON, not keyed.
+#:   * the timestamp is part of the signed string, and it lives in a HEADER, not
+#:     the body -- so hashing the body alone can never be right.
+#:   * the default digest is SHA-1, with SHA-256 also accepted.
+#:
+#: `hmac(secret, body)` would have rejected every genuine notification.
+SCHEME_CLOUDINARY_DOCUMENTED = "cloudinary_documented"
+
+#: Retained only so an old fixture or config naming still resolves rather than
+#: raising on a string nobody remembers writing.
+_LEGACY_SCHEME_ALIASES = {
+    "body_plus_secret": SCHEME_CLOUDINARY_DOCUMENTED,
+    "secret_plus_body": SCHEME_CLOUDINARY_DOCUMENTED,
+    "plain_concat": SCHEME_CLOUDINARY_DOCUMENTED,
+}
+
+#: Cloudinary rejects a notification whose timestamp is older than this, in
+#: seconds. Without a window, a captured signature replays forever.
+DEFAULT_VALID_FOR_SECONDS = 7200
+
 SIGNATURE_HEADERS = ("x-cld-signature", "x-cloudinary-signature")
+
+#: Cloudinary also sends the timestamp in a header, and it is part of the signed
+#: string, so it is read rather than parsed out of the body.
+TIMESTAMP_HEADER = "x-cld-timestamp"
 
 #: Default construction. Overridable because it is the one thing here that must
 #: be confirmed against live traffic rather than assumed.
-DEFAULT_SIGNATURE_SCHEME = "body_plus_secret"
+DEFAULT_SIGNATURE_SCHEME = SCHEME_CLOUDINARY_DOCUMENTED
 
 
 class WebhookAction(str, Enum):
@@ -79,34 +111,95 @@ class WebhookResult:
         return d
 
 
+
+
 def compute_signature(
-    body: bytes, secret: str, scheme: str = DEFAULT_SIGNATURE_SCHEME,
-    algorithm: str = "sha256",
+    body: bytes,
+    secret: str,
+    scheme: str = SCHEME_CLOUDINARY_DOCUMENTED,
+    algorithm: str = "sha1",
+    timestamp: str = "",
 ) -> str:
-    """Compute a notification signature under the named scheme."""
+    """Compute a notification signature under the named scheme.
+
+    ``timestamp`` is the raw ``X-Cld-Timestamp`` value. It is part of the signed
+    string, so omitting it produces a signature that will never match a real
+    notification -- which is why it is a named parameter rather than something
+    a caller can forget.
+    """
     if not secret:
         raise ValueError("A signature secret is required.")
     digest = getattr(hashlib, algorithm, None)
     if digest is None:
         raise ValueError(f"Unsupported signature algorithm: {algorithm}")
 
-    if scheme == "body_plus_secret":
-        return hmac.new(secret.encode(), body, digest).hexdigest()
-    if scheme == "secret_plus_body":
-        return hmac.new(secret.encode(), body, digest).hexdigest()
-    if scheme == "plain_concat":
-        return digest((body.decode("utf-8", "replace") + secret).encode()).hexdigest()
-    raise ValueError(f"Unknown signature scheme: {scheme}")
+    scheme = _LEGACY_SCHEME_ALIASES.get(scheme, scheme)
+    if scheme != SCHEME_CLOUDINARY_DOCUMENTED:
+        raise ValueError(f"Unknown signature scheme: {scheme}")
+    if not timestamp:
+        raise ValueError(
+            "timestamp is required: Cloudinary signs body + X-Cld-Timestamp + secret"
+        )
+    payload = body + str(timestamp).encode() + secret.encode()
+    return digest(payload).hexdigest()
+
+
+def verify_with_sdk(body: bytes, timestamp: str, signature: str, secret: str,
+                    valid_for: int = DEFAULT_VALID_FOR_SECONDS) -> Optional[bool]:
+    """Delegate to Cloudinary's own verifier when the SDK is importable.
+
+    Preferred over :func:`compute_signature`, and the reason this module no longer
+    has to be right about a security construction: the vendor ships a verifier,
+    so reimplementing it is how the previous HMAC bug happened. Returns None when
+    the SDK is absent, which is the caller's cue to use the local fallback.
+    """
+    try:
+        import cloudinary
+        import cloudinary.utils
+    except Exception:  # noqa: BLE001 - any import problem means "not available"
+        return None
+
+    # The SDK verifier reads cloudinary.config().api_secret, NOT a secret passed
+    # in. If a DEDICATED webhook API key is designated, the global secret is a
+    # different one and the SDK would verify against the wrong key -- silently
+    # rejecting every genuine notification. Fall back to the local path instead.
+    configured = (cloudinary.config().api_secret or "")
+    if not configured or not hmac.compare_digest(str(configured), str(secret)):
+        return None
+
+    try:
+        return bool(
+            cloudinary.utils.verify_notification_signature(
+                # Two conversions, both load-bearing:
+                #   body      -- the SDK raises ValueError on bytes.
+                #   timestamp -- the SDK compares it numerically against
+                #     time.time(), but then formats it into the signed string
+                #     with '{}{}{}'. A float renders as '1759000000.0' and no
+                #     longer matches the value Cloudinary actually sent, so
+                #     every genuine notification would fail. int keeps both the
+                #     comparison and the string form correct.
+                body.decode("utf-8") if isinstance(body, (bytes, bytearray)) else body,
+                int(float(timestamp)),
+                signature,
+                valid_for,
+            )
+        )
+    except Exception:  # noqa: BLE001 - a verifier error is a failed verification
+        return False
 
 
 def describe_scheme_uncertainty() -> str:
     return (
-        "The notification signature construction has differed across Cloudinary "
-        "SDK versions. It is a parameter here and is NOT asserted as correct. "
-        "Run scripts/validate_cloudinary_live.py against a real account to "
-        "observe the headers on an actual notification and settle the scheme "
-        "empirically. Until then, treat signature verification as "
-        "unproven and rely on the fixture-mode degradation."
+        "The scheme is Cloudinary's documented construction: "
+        "HEX(HASH(raw_body + X-Cld-Timestamp + api_secret)), SHA-1 by default. "
+        "It is NOT HMAC, and the timestamp is part of the signed string. "
+        "Verification delegates to cloudinary.utils."
+        "verify_notification_signature when the SDK is importable. The scheme "
+        "is still NOT confirmed against a real notification, because that needs "
+        "a publicly reachable endpoint for Cloudinary to POST to; step 9 of "
+        "scripts/validate_cloudinary_live.py reports the headers to watch for. "
+        "Until that is done, treat signature verification as unverified and rely "
+        "on the fixture-mode degradation."
     )
 
 
@@ -117,11 +210,13 @@ class WebhookVerifier:
         self,
         secret: Optional[str] = None,
         scheme: str = DEFAULT_SIGNATURE_SCHEME,
-        algorithm: str = "sha256",
+        algorithm: str = "sha1",
+        valid_for: int = DEFAULT_VALID_FOR_SECONDS,
     ) -> None:
         self._secret = secret or None
         self._scheme = scheme
         self._algorithm = algorithm
+        self._valid_for = int(valid_for)
 
     @property
     def requires_signature(self) -> bool:
@@ -135,8 +230,9 @@ class WebhookVerifier:
     def verify(self, body: bytes, headers: dict) -> tuple:
         """Return ``(ok, reason)``.
 
-        Uses ``hmac.compare_digest`` so a mismatching signature cannot be
-        recovered by timing the comparison.
+        Order matters. The timestamp is rejected as stale BEFORE the signature is
+        checked, because a signature that verifies but is two hours old is a
+        replay, and a replay is exactly what a captured request is.
         """
         if not self.requires_signature:
             return True, "no signature secret configured; verification skipped"
@@ -150,14 +246,48 @@ class WebhookVerifier:
                 f"no signature header present (looked for {list(SIGNATURE_HEADERS)})"
             )
 
+        timestamp = str(lowered.get(TIMESTAMP_HEADER, "")).strip()
+        if not timestamp:
+            return False, (
+                f"no {TIMESTAMP_HEADER} header. Cloudinary signs the body together "
+                "with this value, so a signature cannot be checked without it."
+            )
+        stale = self._replay_reason(timestamp)
+        if stale:
+            return False, stale
+
+        # Prefer the vendor's verifier: it is the reference implementation, and
+        # reimplementing a security construction is what put HMAC in this file.
+        sdk_result = verify_with_sdk(
+            body, timestamp, str(provided), self._secret, self._valid_for
+        )
+        if sdk_result is not None:
+            return (True, "signature verified (cloudinary SDK)") if sdk_result else \
+                   (False, "signature mismatch (cloudinary SDK)")
+
         try:
-            expected = compute_signature(body, self._secret, self._scheme, self._algorithm)
+            expected = compute_signature(
+                body, self._secret, self._scheme, self._algorithm, timestamp
+            )
         except ValueError as exc:
             return False, str(exc)
 
         if not hmac.compare_digest(str(provided), expected):
             return False, "signature mismatch"
-        return True, "signature verified"
+        return True, "signature verified (local fallback)"
+
+    def _replay_reason(self, timestamp: str) -> str:
+        """Reject a notification outside the freshness window."""
+        try:
+            age = abs(time.time() - int(float(timestamp)))
+        except (TypeError, ValueError):
+            return f"{TIMESTAMP_HEADER} is not a unix timestamp: {timestamp!r}"
+        if age > self._valid_for:
+            return (
+                f"notification is {int(age)}s old, outside the "
+                f"{self._valid_for}s freshness window (possible replay)"
+            )
+        return ""
 
 
 class WebhookProcessor:

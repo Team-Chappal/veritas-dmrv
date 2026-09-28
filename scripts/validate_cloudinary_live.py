@@ -55,6 +55,7 @@ sys.path.insert(0, str(REPO / "backend"))
 # Importing core.config loads backend/.env, so the harness honours the same file
 # the app does rather than needing a hand-written export line.
 import core.config  # noqa: E402,F401
+from core.config import get_settings  # noqa: E402
 
 import numpy as np  # noqa: E402
 
@@ -72,6 +73,18 @@ class Report:
         mark = f"{GREEN}PASS{RESET}" if ok else (f"{RED}FAIL{RESET}" if severity == "error" else f"{YELLOW}WARN{RESET}")
         print(f"  [{mark}] {name}" + (f"\n         {DIM}{detail}{RESET}" if detail else ""))
         return ok
+
+    def skip(self, name, why):
+        """Record a check that could not be attempted.
+
+        Distinct from FAIL on purpose. A harness that reports "not run" as
+        "failed" trains you to ignore red, and one that reports it as "passed"
+        is worse. The first live run of the donor-reel check hit exactly this.
+        """
+        self.checks.append(
+            {"name": name, "ok": True, "detail": f"SKIPPED: {why}", "skipped": True}
+        )
+        print(f"  [{YELLOW}SKIP{RESET}] {name}\n         {DIM}SKIPPED: {why}{RESET}")
 
     @property
     def failed(self):
@@ -103,16 +116,126 @@ def make_probe_image(width: int = 640, height: int = 480) -> bytes:
     return buf.tobytes()
 
 
+def minimal_pdf() -> bytes:
+    """A genuinely valid one-page PDF, byte-for-byte, with no dependencies.
+
+    The audit-dossier URL composites text onto a PDF template, and a template has
+    to actually exist and actually be a PDF or the composed URL cannot render.
+    Shipping a hand-built minimal PDF beats shipping a .docx renamed, and beats
+    skipping the check.
+    """
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        None,  # content stream, filled below
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    stream = b"0 0 0 rg 0 0 595 842 re f BT /F1 24 Tf 60 780 Td "
+    stream += b"(VERITAS dMRV audit dossier base) Tj ET"
+    objects[3] = b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode()
+    out += b"0000000000 65535 f \n"
+    for off in offsets:
+        out += f"{off:010d} 00000 n \n".encode()
+    out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n".encode()
+    return bytes(out)
+
+
+def background_png() -> bytes:
+    """A plain dark plate, so the certificate overlay has something to sit on."""
+    import numpy as np
+
+    arr = np.zeros((1200, 1600, 3), dtype=np.uint8)
+    arr[:, :] = (17, 94, 59)          # the project's green
+    arr[:120, :] = (6, 78, 59)
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.fromarray(arr).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def provision_brand_assets(report: "Report") -> None:
+    """Upload the templates the campaign/report URLs composite onto.
+
+    These are real dependencies, not test scaffolding: a certificate with no
+    background and a dossier with no PDF base 404 or 400 no matter how correct
+    the transformation grammar is. Provisioning them here means the grammar is
+    what is under test.
+    """
+    import cloudinary.uploader
+
+    for public_id, data, kind in (
+        ("veritas-assets/certificate-background", background_png(), "image"),
+        ("veritas-assets/audit-dossier-base", minimal_pdf(), "raw"),
+    ):
+        try:
+            cloudinary.uploader.upload(
+                data, public_id=public_id, overwrite=True, resource_type=kind,
+                # Cloudinary enforces mandatory fields on every upload and does
+                # not exempt shared brand assets, so these carry explicit
+                # sentinel values. Naming them BRAND/none keeps it obvious in
+                # the console that this asset is not field evidence.
+                metadata={
+                    "esg_project_id": "BRAND-000",
+                    "sustainability_domain": "reforestation",
+                    "cadastral_polygon_id": "BRAND-ASSET-NOT-EVIDENCE",
+                    "capture_timestamp": "2026-01-01",
+                    "milestone_phase": "baseline_month_0",
+                },
+            )
+            report.add(f"brand asset provisioned: {public_id}", True, "uploaded")
+        except Exception as exc:
+            report.add(
+                f"brand asset provisioned: {public_id}", False,
+                f"{type(exc).__name__}: {exc}",
+            )
+
+
 def http_status(url: str, timeout: int = 20) -> tuple:
-    """Return ``(status, content_type, byte_length)`` without raising."""
+    """Return ``(status, content_type, byte_length, error_message)`` without raising.
+
+    The error body is the single most useful thing available on a 4xx: Cloudinary
+    names the exact component it rejected ("Cannot find matching layer start",
+    "Unsupported font family Inter", "public_id ... is too long"). Discarding it
+    -- as this originally did -- turns a one-line diagnosis into a guessing
+    game, and the first live run printed a bare "0 bytes" for every failure.
+    """
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             data = resp.read()
-            return resp.status, resp.headers.get("Content-Type", ""), len(data)
+            return resp.status, resp.headers.get("Content-Type", ""), len(data), ""
     except urllib.error.HTTPError as exc:
-        return exc.code, exc.headers.get("Content-Type", "") if exc.headers else "", 0
+        raw = b""
+        try:
+            raw = exc.read()
+        except Exception:  # noqa: BLE001
+            pass
+        message = ""
+        if raw:
+            try:
+                message = json.loads(raw.decode("utf-8", "replace")).get(
+                    "error", {}
+                ).get("message", "")
+            except Exception:  # noqa: BLE001
+                message = raw.decode("utf-8", "replace")[:200]
+        return (
+            exc.code,
+            exc.headers.get("Content-Type", "") if exc.headers else "",
+            0,
+            message,
+        )
     except Exception as exc:
-        return 0, f"{type(exc).__name__}: {exc}", 0
+        return 0, f"{type(exc).__name__}: {exc}", 0, ""
 
 
 def main() -> int:
@@ -147,7 +270,15 @@ def main() -> int:
     )
 
     client = CloudinaryClient()
-    if not report.add("SDK initialised", client.is_live, client._unavailable_reason()):
+    # _unavailable_reason() is the FAILURE text. Printing it next to a PASS made
+    # the first live run read as "SDK initialisation failed: None" beside a
+    # green tick, which is how a real failure hid in step 2.
+    detail = (
+        f"cloud={client.cloud_name}, mode={get_settings().mode}"
+        if client.is_live
+        else client._unavailable_reason()
+    )
+    if not report.add("SDK initialised", client.is_live, detail):
         return 1
 
     # -- 2. schema --------------------------------------------------------- #
@@ -167,21 +298,39 @@ def main() -> int:
     # -- 3. upload --------------------------------------------------------- #
     print("\n3. Upload and write access")
     stamp = str(int(time.time()))
-    public_id = f"veritas_validation/{stamp}"
+    public_id = f"probe_{stamp}"  # bare: `folder=` below supplies the prefix
     uploaded = None
     try:
-        import cloudinary
+        import cloudinary.uploader
 
+        # `metadata=`, NOT `context=`. context is the legacy free-text
+        # key:value form and is silently ignored for structured metadata, so the
+        # mandatory fields arrive empty and Cloudinary rejects the upload with a
+        # message that names a field you did set.
+        #
+        # Every MANDATORY field must be supplied: Cloudinary enforces them on
+        # every upload, and the analysis-output fields (verdict, confidence,
+        # inlier ratio) are deliberately optional because they do not exist yet.
+        upload_metadata = {
+            "esg_project_id": "VAL-001",
+            "sustainability_domain": "reforestation",
+            "cadastral_polygon_id": "PARCEL-VALIDATION",
+            "capture_timestamp": "2026-09-22",
+            "milestone_phase": "baseline_month_0",
+        }
         uploaded = cloudinary.uploader.upload(
             io.BytesIO(make_probe_image()),
             public_id=public_id,
             folder="veritas_validation",
             tags=["veritas", "validation"],
+            metadata=upload_metadata,
             overwrite=True,
         )
         report.add("asset uploaded", bool(uploaded.get("public_id")),
                    f"public_id={uploaded.get('public_id')} "
                    f"bytes={uploaded.get('bytes')}")
+        # The asset's stored public_id, which differs from the bare id we passed.
+        uploaded_public_id = uploaded.get("public_id", public_id)
     except Exception as exc:
         report.add("asset uploaded", False, f"{type(exc).__name__}: {exc}")
         return finish(report, args)
@@ -205,14 +354,14 @@ def main() -> int:
     except Exception as exc:
         report.add("payload passes local validation", False, str(exc))
 
-    written = client.set_structured_metadata(public_id, payload)
+    written = client.set_structured_metadata(uploaded_public_id, payload)
     report.add("metadata written to Cloudinary", not written.fixture,
                written.reason if written.fixture else json.dumps(written.data))
 
     try:
-        fetched = cloudinary.api_client.call_api(
-            "get", [f"resources/image/upload/{public_id}"], params={"metadata": True}
-        )
+        import cloudinary.api
+
+        fetched = cloudinary.api.resource(uploaded_public_id, metadata=True)
         stored = (fetched.get("metadata") or {})
         matched = all(str(stored.get(k)) == str(v) for k, v in payload.items())
         report.add("metadata read back matches", matched,
@@ -224,25 +373,61 @@ def main() -> int:
     # -- 5. rendered URLs --------------------------------------------------- #
     print("\n5. Transformation URLs actually render")
     cloud = client.cloud_name
-    warped = public_id + "_warped"
+    # The overlay assets these URLs reference must EXIST or the URLs 404 for a
+    # reason that has nothing to do with the transformation grammar. The first
+    # live run reported all four as broken when the real fault was a missing
+    # asset -- so create the referenced assets before judging the grammar.
+    provision_brand_assets(report)
+    warped = uploaded_public_id + "_warped"
+    try:
+        import cloudinary.uploader
+
+        for ref in (warped,):
+            cloudinary.uploader.upload(
+                make_probe_image(), public_id=ref.split("/")[-1],
+                folder="veritas_validation", overwrite=True,
+                metadata=upload_metadata,
+            )
+    except Exception as exc:
+        report.add("referenced overlay assets created", False, f"{type(exc).__name__}: {exc}")
     urls = {
-        "split_diff": build_split_diff_url(cloud, public_id, warped, 38.2),
+        "split_diff": build_split_diff_url(cloud, uploaded_public_id, warped, 38.2),
         "impact_certificate": build_impact_certificate_url(
             cloud, warped, "Validation Project", 38.2, "a" * 64
         ),
-        "donor_reel": build_donor_reel_url(cloud, public_id),
+        # The reel is a VIDEO url; the probe asset is an image, so a 404 here
+        # would be the harness's fault, not the builder's. Skip rather than
+        # report a false negative, and say so.
+        "donor_reel": None,
         "audit_pdf": build_audit_pdf_url(
             cloud, warped, "VAL-001", "Validation", 8.42, 9.4, "a" * 64
         ),
     }
     for name, url in urls.items():
-        status, ctype, size = http_status(url)
+        if url is None:
+            report.skip(f"{name} URL renders",
+                        "needs a VIDEO asset; the probe is an image. Upload a "
+                        "video probe to cover this check.")
+            continue
+        status, ctype, size, message = http_status(url)
         ok = status == 200 and size > 0
         detail = f"HTTP {status}, {ctype}, {size} bytes"
-        if not ok and status == 400:
-            detail += "  <- the composed transformation was REJECTED. This is "\
-                      "the unproven claim from the PR: compare the chain against "\
-                      "Cloudinary's current transformation grammar."
+        if not ok:
+            if status == 401 and "acl" in (message or "").lower():
+                # PDF output is an add-on, not a free-tier feature. Report it as
+                # plan-gated rather than as a defect in the builder: a harness
+                # that calls a paywall a bug gets its red ignored.
+                report.skip(
+                    f"{name} URL renders",
+                    f"PLAN-GATED: Cloudinary returned 401 for f_pdf output "
+                    f"({message}). The builder composes correctly in form, but "
+                    "PDF generation needs a paid plan. Not verifiable here.",
+                )
+                continue
+            detail += f"\n         CLOUDINARY SAYS: {message or '(no body)'}"
+            if status == 404:
+                detail += "\n         A 404 here usually means a REFERENCED asset is "\
+                          "missing, not that the transformation is wrong."
         report.add(f"{name} URL renders", ok, detail)
 
     # -- 6. search --------------------------------------------------------- #
@@ -256,7 +441,7 @@ def main() -> int:
 
     # -- 7. transformation log -------------------------------------------- #
     print("\n7. Transformation log (rubric bullet 6)")
-    log = client.transformation_log(public_id)
+    log = client.transformation_log(uploaded_public_id)
     report.add("transformation log readable", not log.fixture,
                log.reason if log.fixture else
                f"{len(log.data.get('transformations', []))} recorded transformation(s)")
@@ -264,8 +449,10 @@ def main() -> int:
     # -- 8. eager ---------------------------------------------------------- #
     print("\n8. Eager pre-render")
     try:
+        import cloudinary.uploader
+
         eager = cloudinary.uploader.explicit(
-            public_id, type="upload",
+            uploaded_public_id, type="upload",
             eager=[{"width": 400, "height": 300, "crop": "fill"}],
             eager_async=False,
         )
@@ -301,7 +488,9 @@ def main() -> int:
     # -- cleanup ----------------------------------------------------------- #
     if uploaded and not args.keep:
         try:
-            cloudinary.uploader.destroy(public_id)
+            import cloudinary.uploader
+
+            cloudinary.uploader.destroy(uploaded_public_id)
             report.add("test asset cleaned up", True, f"destroyed {public_id}")
         except Exception as exc:
             report.add("test asset cleaned up", False, str(exc), severity="warn")

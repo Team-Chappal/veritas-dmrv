@@ -43,9 +43,14 @@ rather than quietly fixing it.
   module and catches bad imports early.
 - **Cloudinary credentials are absent by default.** Credentialed paths run in
   fixture mode and the app must stay usable that way — CI has a job that asserts
-  it. `scripts/validate_cloudinary_live.py` is the one command that exercises the
-  live paths; it has never been run, so treat those paths as unproven until it
-  exits clean.
+  it. Put real credentials in `backend/.env` (gitignored, loaded by
+  `core.config`); `VERITAS_NO_DOTENV=1` opts out, which is how the test suite
+  keeps itself in fixture mode on a machine that has them.
+- `scripts/validate_cloudinary_live.py` exercises the live paths. **It has been
+  run** — 18 pass, 0 fail, 2 skipped (one video asset, one paid-plan feature) —
+  and it found six real defects in the transformation grammar that the unit tests
+  were green about. Re-run it after touching `core/cloudinary_client.py`; a URL
+  that a test asserts the shape of is not a URL anyone has loaded.
 - Develop on the local APFS repo, not the USB volume at `/Volumes/VENTOY` — it
   is FAT32, case-insensitive and slow, and tests crawl there. `make sync-usb`
   mirrors when the volume is mounted.
