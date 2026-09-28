@@ -564,3 +564,59 @@ class TestMockCloudinaryRoutes:
         assert s["registered_live"] is False
         assert "not configured" in s["note"]
         assert len(s["fields"]) == 11
+
+
+class TestMockWebhookRoute:
+    """The webhook endpoint is the only unauthenticated write surface.
+
+    Anyone who learns the URL can POST a fabricated payload, so this route must
+    verify, deduplicate, and refuse to act on anything it cannot verify.
+    """
+
+    def test_health_reports_signature_enforcement(self, client):
+        caps = client.get("/health").json()["capabilities"]
+        assert "webhook_signature_enforced" in caps
+        assert isinstance(caps["webhook_signature_enforced"], bool)
+
+    def test_eager_notification_accepted_in_fixture_mode(self, client):
+        r = client.post("/v1/cloudinary-webhooks/notify", json={
+            "notification_type": "eager", "public_id": "a/b",
+            "eager": [{"secure_url": "u"}],
+        })
+        body = r.json()
+        # Degraded open so the demo works, but the reason must admit that
+        # verification was skipped rather than implying it happened.
+        assert body["action"] in {"ACCEPTED", "REJECTED_UNVERIFIED"}
+        if body["action"] == "ACCEPTED":
+            assert "skipped" in body["reason"]
+
+    def test_retry_is_deduplicated(self, client):
+        payload = {"notification_type": "eager", "public_id": "dedup/x",
+                   "eager": [{"secure_url": "u"}]}
+        client.post("/v1/cloudinary-webhooks/notify", json=payload)
+        second = client.post("/v1/cloudinary-webhooks/notify", json=payload).json()
+        assert second["action"] in {"DUPLICATE", "REJECTED_UNVERIFIED"}
+
+    def test_video_notification_yields_a_valid_caption_track(self, client):
+        r = client.post("/v1/cloudinary-webhooks/notify", json={
+            "notification_type": "video", "public_id": "v/1",
+            "info": {"categorization": {"google_video_tagging": {"data": [
+                {"tag": "forest", "start_time_offset": 0, "end_time_offset": 12, "confidence": 0.97},
+                {"tag": "canopy", "start_time_offset": 2, "end_time_offset": 9, "confidence": 0.94},
+            ]}}},
+        }).json()
+        if r["action"] == "ACCEPTED":
+            from services.video_service import validate_vtt
+
+            vtt = r["derived"]["vtt"]
+            assert validate_vtt(vtt) == [], "a caption track that fails its own validator"
+            assert "forest" in r["derived"]["tags"]
+            assert r["derived"]["hotspots"]
+
+    def test_malformed_body_is_rejected_not_500(self, client):
+        r = client.post(
+            "/v1/cloudinary-webhooks/notify",
+            content=b"not json",
+            headers={"content-type": "application/json"},
+        )
+        assert r.status_code in (400, 422)

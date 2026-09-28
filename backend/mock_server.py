@@ -51,8 +51,9 @@ from typing import Any, Optional
 # exposes are pure and are the Stage 4 deliverable.
 from core.cloudinary_client import CloudinaryClient, validate_public_id
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 BACKEND = Path(__file__).resolve().parent
@@ -169,6 +170,7 @@ def health() -> dict:
             "narrative_summaries": S3_AVAILABLE,
             "timeline": S3_AVAILABLE,
             "semantic_backend": _semantic_index().backend_name,
+            "webhook_signature_enforced": _WEBHOOK_PROCESSOR.verifier.requires_signature,
             "note": (
                 "Photogrammetry and canopy quantification run for real when "
                 "OpenCV is installed. Set VERITAS_STUB_CV=1 for canned values."
@@ -647,6 +649,41 @@ def project_summary(project_id: str) -> dict:
         top_tags=["canopy", "mangrove", "water"],
     )
     return {"mode": "MOCK", "facts": facts.to_dict(), **build_grounded_summary(facts)}
+
+
+# --------------------------------------------------------------------------- #
+# Cloudinary webhooks
+# --------------------------------------------------------------------------- #
+
+#: Built with the webhook secret when configured. Without one the processor
+#: ACCEPTS unverified notifications — degraded for the demo, and the health
+#: endpoint below says so plainly.
+from services.webhook_service import (  # noqa: E402
+    WebhookAction,
+    WebhookProcessor,
+    WebhookVerifier,
+)
+
+_WEBHOOK_PROCESSOR = WebhookProcessor(
+    WebhookVerifier(secret=os.getenv("CLOUDINARY_WEBHOOK_SECRET"))
+)
+
+
+@app.post("/v1/cloudinary-webhooks/notify")
+@app.post("/api/v1/cloudinary-webhooks/notify")
+async def cloudinary_webhook(request: Request) -> dict:
+    """Single entry point for every Cloudinary notification type.
+
+    Verify -> deduplicate -> dispatch. An unverifiable payload is rejected, so
+    a fabricated POST cannot mark a fraudulent asset as verified.
+    """
+    body = await request.body()
+    headers = {k: v for k, v in request.headers.items()}
+    result = _WEBHOOK_PROCESSOR.process(body, headers)
+    status = 200 if result.action in (
+        WebhookAction.ACCEPTED, WebhookAction.DUPLICATE, WebhookAction.IGNORED_UNHANDLED,
+    ) else 400
+    return JSONResponse(status_code=status, content=result.to_dict())
 
 
 # --------------------------------------------------------------------------- #

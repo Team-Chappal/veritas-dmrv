@@ -55,11 +55,11 @@ capability is only partly delivered — says so.
 | # | Requirement | Status | Implementation | Tests |
 | :-- | :--- | :--- | :--- | :--- |
 | **1** | Analyze and intelligently organize large collections | 🟡 partial | Cloudinary Structured Metadata (11 typed fields, Lucene index); folder taxonomy by project; **`SemanticIndex`** over the whole corpus; `make seed` stages a 500-asset corpus | `TestSemanticIndex`, `TestQueryCompilation` |
-| **2** | Identify projects, activities, locations, **visual signals** | 🟢 | `enrichment_service` — canopy cover, water, sky, soil, urban, overcast, harsh-sun, aerial-vs-ground, all measured from pixels; capture metadata contributes project/phase/domain; Cloudinary `categorization` fused | `TestEnrichment` (18), `TestHueBands` (4), `TestCloudinaryFusion` (4) |
+| **2** | Identify projects, activities, locations, **visual signals** | 🟢 | `enrichment_service` — canopy cover, water, sky, soil, urban, overcast, harsh-sun, aerial-vs-ground, all measured from pixels; capture metadata contributes project/phase/domain; Cloudinary `categorization` fused. `video_service` turns AI Video Analysis segments into a WebVTT caption track and player hotspots | `TestEnrichment` (18), `TestHueBands` (4), `TestCloudinaryFusion` (4), `TestVttRendering` (12), `TestHotspots` (5) |
 | **3** | **Compare before-and-after** to demonstrate change | 🟢 | `homography_service` (CLAHE→SIFT→FLANN→Lowe→USAC_MAGSAC++→warp, NumPy TPS fallback) + `canopy_service` (GLI+Otsu, warp-border exclusion) | `TestRegistration` (8), `TestParallaxTrigger` (7), `TestThinPlateSpline` (8), `TestCanopyMeasurement` (10) |
-| **4** | Visual reports, **summaries**, **campaign-ready content** | 🟡 partial | Reports: dossier endpoint + dynamic PDF/certificate URLs. **Summaries: `narrative_service`** with enforced grounding and an LLM-prose boundary. **Campaign content: NOT YET BUILT** — the 9:16 reel and certificate URL builders are still spec-only | `TestGrounding` (13), `TestLlmBoundary` (5) |
+| **4** | Visual reports, **summaries**, **campaign-ready content** | 🟢 | Reports and campaign content: split-diff, 9:16 donor reel, impact certificate and vector audit PDF, all composed as transformation URLs with no server-side render. Summaries: `narrative_service` with enforced grounding and an LLM-prose boundary | `TestUrlEngine` (18), `TestGrounding` (13), `TestLlmBoundary` (5), `TestMockCloudinaryRoutes` (9) |
 | **5** | **AI-powered metadata, tagging, semantic discovery** | 🟡 partial | Tagging: `enrichment_service`. Similarity: `semantic_service` (**tf-idf lexical**, not a neural model) with a Cloudinary Vector Search adapter. Structured: `query_service` NL→validated Lucene | `TestSemanticIndex` (15), `TestQueryCompilation` (14) |
-| **6** | Traceability to source assets and transformations | 🟡 partial | C2PA manifests, SHA-256 roots, `audit_receipt_id`, transformation logs, provenance panel spec. **Transformation-log ingestion is S4** | `TestMockDossier` (4) |
+| **6** | Traceability to source assets and transformations | 🟡 partial | C2PA manifests, SHA-256 roots, `audit_receipt_id`; `/assets/{id}/provenance` reports the master asset and its transformation chain, live against the Cloudinary API. **Live read unproven** — see below | `TestMockDossier` (4), `TestMockCloudinaryRoutes` (9) |
 | intro | Organize by **timeline** | 🟢 | `timeline_service` — milestone epochs, single-epoch asset assignment, coverage gaps, and the count-trap case | `TestTimeline` (12), `TestDateHelpers` (5) |
 
 ### Legend
@@ -69,16 +69,17 @@ capability is only partly delivered — says so.
 
 ## The two gaps, stated plainly
 
-### 1. "Campaign-ready content" is not built (bullet 4)
+### 1. No Cloudinary call has run live
 
-`docs/05-API-SPEC.md` §2.3 and §2.5 specify a 9:16 vertical donor reel and a
-branded impact certificate as Cloudinary URL transformations. **Neither is
-implemented.** The URL patterns are in the spec and the transformation engine
-arrives in S4.
+`scripts/validate_cloudinary_live.py` exists to settle this in one command, and
+**has never been executed** because no credentials were available. Until it
+passes, three things are unproven:
 
-This is the most visible remaining gap, because "compelling visual stories" is
-in the brief's expected outcome. It is scheduled for S4, not deferred
-indefinitely.
+- the composed transformation URLs actually render (if Cloudinary has changed
+  `fl_layer_apply` or `g_auto:subject`, they 400);
+- the structured-metadata schema bootstraps as written;
+- the webhook signature scheme, which is deliberately a **parameter** rather
+  than an assertion — see the note below.
 
 ### 2. Semantic search is lexical, not neural (bullet 5)
 
@@ -91,6 +92,21 @@ The Cloudinary Vector Search adapter is implemented and selected automatically
 when credentials are configured, and it uses genuine server-side embeddings.
 The backend name is reported in every response and the local path is described
 as lexical in the response `notes`, so it is never presented as more than it is.
+
+### 3. The webhook signature scheme is deliberately unconfirmed
+
+`webhook_service.py` does not assert which construction Cloudinary uses for
+notification signatures. That is not an oversight: asserting a security
+construction from memory is how the Chave allometric "correction" happened, and a
+webhook is the one endpoint where getting it wrong lets an unauthenticated POST
+mark a fraudulent asset as verified. The scheme is a parameter, and
+`validate_cloudinary_live.py` step 9 prints the headers a real notification
+carries so it is established by observation.
+
+With `CLOUDINARY_WEBHOOK_SECRET` unset the processor **accepts unverified
+notifications** so the demo works. That is a deliberate, flagged degradation:
+`/health` reports `webhook_signature_enforced: false`, and the result's `reason`
+says verification was skipped.
 
 ---
 
