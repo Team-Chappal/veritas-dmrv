@@ -37,9 +37,10 @@ import logging
 import secrets
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Callable
+from typing import Annotated, Callable
 
 import jwt
+from fastapi import Header
 
 from core.config import Settings, get_settings
 
@@ -312,7 +313,9 @@ def require_scope(
     if scope not in ALL_SCOPES:
         raise AuthError(f"Unknown scope {scope!r}")
 
-    def dependency(authorization: str | None = None) -> Principal:
+    def dependency(
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    ) -> Principal:
         if not authorization:
             return ANONYMOUS
         return principal_from_header(authorization, settings)
@@ -326,6 +329,29 @@ def authorise(principal: Principal, scope: str) -> Principal:
     if not principal.has_scope(scope):
         raise InsufficientScope(principal.missing(scope))
     return principal
+
+
+def enforce_scope(scope: str, settings: Settings | None = None) -> Callable[..., Principal]:
+    """FastAPI dependency: require ``scope``, distinguishing 401 from 403.
+
+    The distinction is not cosmetic. "No credentials" and "credentials that are
+    not good enough" are different failures for a client: the first is fixed by
+    logging in, the second by asking for a different role, and a client told 403
+    when it should have been told 401 will retry anonymously forever.
+    """
+    if scope not in ALL_SCOPES:
+        raise AuthError(f"Unknown scope {scope!r}")
+
+    def dependency(
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+    ) -> Principal:
+        if not authorization or not authorization.strip():
+            raise TokenError(f"Scope {scope} required. No bearer token supplied.")
+        principal = principal_from_header(authorization, settings)
+        return authorise(principal, scope)
+
+    dependency.__name__ = f"enforce_{scope.replace(':', '_')}"
+    return dependency
 
 
 def scope_grants(principal: Principal, scope: str) -> bool:

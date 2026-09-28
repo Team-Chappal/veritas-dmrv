@@ -202,6 +202,82 @@ class TestIdentityKeying:
         assert client_identity(_request()) == "ip:10.0.0.1"
 
 
+class TestRetryAfterDerivation:
+    """The window comes from the limit's GRANULARITY, not from its budget.
+
+    An earlier version read ``limit.multiplier.amount`` and used it as the
+    window. ``RateLimitItemPerMinute`` has no ``multiplier`` attribute at all, so
+    that path silently never fired and the handler always answered 60s — correct
+    only because the shipped limit happens to be per-minute. It would have
+    advised a 60-second wait on a per-hour limit.
+    """
+
+    @staticmethod
+    def _exc(spec: str):
+        from limits.util import parse
+        from slowapi.errors import RateLimitExceeded as RLE
+        from slowapi.wrappers import Limit
+
+        wrapper = Limit(
+            parse(spec), key_func=lambda r: "k", scope="s", per_method=True,
+            methods=None, error_message="429", exempt_when=None, cost="1",
+            override_defaults=False,
+        )
+        return RLE(limit=wrapper)
+
+    def test_minute_window_is_sixty_seconds(self):
+        from core.rate_limit import _retry_after_seconds
+
+        assert _retry_after_seconds(self._exc("5/minute")) == 60
+
+    def test_hour_window_is_3600_seconds(self):
+        """The bug this replaces reported 60s here."""
+        from core.rate_limit import _retry_after_seconds
+
+        assert _retry_after_seconds(self._exc("5/hour")) == 3600
+
+    def test_budget_does_not_leak_into_the_window(self):
+        from core.rate_limit import _retry_after_seconds
+
+        assert _retry_after_seconds(self._exc("200/minute")) == 60
+
+    def test_second_window(self):
+        from core.rate_limit import _retry_after_seconds
+
+        assert _retry_after_seconds(self._exc("10/second")) == 1
+
+    @staticmethod
+    def _bare(default_window=60):
+        """A limit-less exception.
+
+        ``RateLimitExceeded`` cannot actually be built without a limit -- its
+        constructor dereferences ``limit.error_message`` -- so the unattached
+        branch is exercised with a duck-typed stand-in. That is safe here because
+        ``_retry_after_seconds`` only ever uses getattr on it.
+        """
+        class _Bare:
+            limit = None
+
+        from core.rate_limit import _retry_after_seconds
+
+        return _retry_after_seconds(_Bare(), default_window)
+
+    def test_falls_back_when_no_limit_is_attached(self):
+        assert self._bare() == 60
+
+    def test_never_reports_zero(self):
+        """Retry-After: 0 invites an immediate retry, the opposite of the point."""
+        assert self._bare(default_window=0) == 1
+
+    def test_live_429_header_matches_a_non_minute_limit(self):
+        """End to end, because the unit path can drift from the real exception."""
+        c = _app("1/hour")
+        c.get("/ping")
+        r = c.get("/ping")
+        assert r.status_code == 429
+        assert r.headers["Retry-After"] == "3600"
+
+
 class TestShippedDefault:
     def test_default_is_the_specified_60_per_minute(self, monkeypatch):
         """The env override the suite installs must not hide the real default."""

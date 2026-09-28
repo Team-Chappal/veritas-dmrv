@@ -31,6 +31,7 @@ from core.auth import (
     TokenError,
     auth_state,
     authorise,
+    enforce_scope,
     decode_token,
     extract_bearer,
     issue_token,
@@ -337,6 +338,25 @@ class TestHeaderParsing:
     def test_dependency_rejects_an_unknown_scope_at_build_time(self):
         with pytest.raises(AuthError, match="Unknown scope"):
             require_scope("mrv:overlord")
+
+    def test_enforce_rejects_an_unknown_scope_at_build_time(self):
+        """A typo'd scope must fail at wiring time, not authorise nothing."""
+        with pytest.raises(AuthError, match="Unknown scope"):
+            enforce_scope("mrv:overlord")
+
+    def test_enforce_401s_without_a_token_and_403s_with_the_wrong_one(self, settings):
+        dep = enforce_scope(SCOPE_TRIAGE_REVIEW, settings)
+        with pytest.raises(TokenError):
+            dep(authorization=None)
+        with pytest.raises(TokenError):
+            dep(authorization="   ")
+        with pytest.raises(InsufficientScope):
+            dep(authorization=f"Bearer {issue_token('field', settings=settings)}")
+
+    def test_enforce_passes_a_matching_token(self, settings):
+        dep = enforce_scope(SCOPE_TRIAGE_REVIEW, settings)
+        p = dep(authorization=f"Bearer {issue_token('triage', settings=settings)}")
+        assert p.has_scope(SCOPE_TRIAGE_REVIEW)
 
 
 # --------------------------------------------------------------------------- #
