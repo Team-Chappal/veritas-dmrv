@@ -199,6 +199,8 @@ export function Panel({
   className = "",
   testId,
   dataSource,
+  dataQuery,
+  dataResultQuery,
 }: {
   id: string;
   title: string;
@@ -212,11 +214,20 @@ export function Panel({
   /** "live" | "fixture", when the panel's contents have a known origin. Kept on
    *  the landmark so "what am I looking at?" is answerable from one node. */
   dataSource?: "live" | "fixture";
+  /** What the user has INPUT. Differs from dataResultQuery below: typing does
+   *  not re-run a search. */
+  dataQuery?: string;
+  /** The query the VISIBLE RESULTS came from. This is the one a test must wait
+   *  on, and it is the one that matters for a screenshot audit -- a panel
+   *  showing results for a query nobody can see is misleading. */
+  dataResultQuery?: string;
 }) {
   return (
     <section
       data-testid={testId}
       data-source={dataSource}
+      data-query={dataQuery}
+      data-result-query={dataResultQuery}
       aria-labelledby={id}
       className={`rounded-lg border border-slate-700 bg-surface p-6 ${className}`}
     >

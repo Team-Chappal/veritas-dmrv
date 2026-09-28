@@ -139,6 +139,45 @@ test.describe("SemanticSearch", () => {
     await expect(page.getByRole("search")).toBeVisible();
   });
 
+  test("an unmatched term PENALISES the score, as the real backend does", async ({ page }) => {
+    // The fixture originally reported ~0.9999 for a query where half the terms
+    // matched nothing, because it normalised over query terms the index has
+    // never seen. The backend gives an unknown term idf 1.0, which inflates the
+    // query vector and shrinks the cosine -- so "canopy zzzz" scores BELOW
+    // "canopy" alone there too. A fixture that flattered itself would make a
+    // half-failed query look like a certain match.
+    // POLLED, not read once. Submitting is async, so an immediate read returns
+    // the PREVIOUS query's results -- which made this spec compare 0.367 with
+    // 0.367 and fail for a reason that had nothing to do with the scorer.
+    const topScore = async (q: string) => {
+      await search(page, q);
+      await expect(page.getByTestId("search-hits").locator("li")).not.toHaveCount(0);
+      // Wait on the query the RESULTS came from, not the one that is typed.
+      // data-query updates the moment submit is pressed, which is before the
+      // fetch resolves, so waiting on it still reads the previous results.
+      await expect(page.getByTestId("semantic-search")).toHaveAttribute(
+        "data-result-query",
+        q
+      );
+      return Number(
+        await page.getByTestId("search-hit").first().locator(".text-telemetry").innerText()
+      );
+    };
+
+    const one = await topScore("canopy");
+    const two = await topScore("canopy mangrove");
+    const penalised = await topScore("canopy zzzznotatag");
+
+    // More matched terms scores higher.
+    expect(two).toBeGreaterThan(one);
+    // An unmatched term drags the score DOWN, not up.
+    expect(penalised).toBeLessThan(one);
+    // And a real tf-idf cosine for a single common term is nowhere near 1.0.
+    // A 0.999 reads as "certain match", which tf-idf cannot support.
+    expect(one).toBeLessThan(0.9);
+    expect(one).toBeGreaterThan(0);
+  });
+
   test("the score is labelled as relevance, not confidence", async ({ page }) => {
     await search(page, "canopy");
     const score = page.getByTestId("search-hit").first().locator(".text-telemetry");
