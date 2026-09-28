@@ -153,21 +153,33 @@ export default function ProofOfImpactStudio() {
           className="relative mt-2 h-56 w-full cursor-ew-resize touch-none select-none overflow-hidden rounded border border-slate-700"
           style={{ backgroundImage: `url("${comparison.baseline.src}")`, backgroundSize: "cover" }}
         >
+          {/*
+            CLIPPED, not sized. The previous version put the progress image in a
+            half-width overflow container and pinned its width to the track's
+            clientWidth, falling back to 800px before the ref resolved. In a
+            602px track that rendered the progress frame at 800px while the
+            baseline was cover-scaled to 602 -- so the two halves showed the same
+            scene at DIFFERENT MAGNIFICATIONS. A before/after comparison whose
+            halves are not the same field of view is not a comparison, and it
+            reads as canopy growth that is not there.
+
+            clip-path on a full-size image removes the measurement entirely:
+            both frames are the same size and the same scale by construction.
+          */}
           <div
-            className="absolute inset-y-0 right-0 overflow-hidden"
-            style={{ width: `${100 - split}%` }}
+            className="absolute inset-0"
+            style={{ clipPath: `inset(0 0 0 ${split}%)` }}
             data-testid="slider-progress-layer"
           >
             <img
               src={comparison.progress.src}
               // "Synthetic" is in the ALT, not just painted into the SVG. It
               // was only in the pixels, so a screen-reader user was told the
-              // frame was real field evidence from month 18 -- which is exactly
-              // the misreading this label exists to prevent, and it was hidden
-              // from the one user least able to check the pixels.
+              // frame was real field evidence from month 18 -- exactly the
+              // misreading this label exists to prevent, and it was hidden from
+              // the one user least able to check the pixels.
               alt={`Synthetic scene: ${comparison.progress.label}, captured ${comparison.progress.captured}. Not field evidence.`}
-              className="absolute inset-y-0 right-0 h-full"
-              style={{ width: `${trackRef.current?.clientWidth ?? 800}px`, maxWidth: "none" }}
+              className="h-full w-full object-cover"
               draggable={false}
             />
           </div>

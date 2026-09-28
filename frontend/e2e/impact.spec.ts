@@ -118,6 +118,34 @@ test.describe("ProofOfImpactStudio", () => {
     expect(box!.width).toBeGreaterThanOrEqual(44);
   });
 
+  test("BOTH HALVES SHOW THE SAME FIELD OF VIEW", async ({ page }) => {
+    // A before/after comparison whose halves are not the same scale is not a
+    // comparison. The previous version pinned the progress image to the track's
+    // clientWidth, falling back to 800px before the ref resolved -- so in a 602px
+    // track the progress frame rendered at 800px against a baseline scaled to
+    // 602. The edges lined up, which is why a screenshot review missed it.
+    const track = await page.getByTestId("slider-track").boundingBox();
+    const img = await page.locator("img").first().boundingBox();
+    expect(track).not.toBeNull();
+    expect(img).not.toBeNull();
+    expect(
+      Math.abs(track!.width - img!.width),
+      `progress frame is ${Math.round(img!.width)}px in a ${Math.round(
+        track!.width
+      )}px track, so the halves show the same scene at different magnifications`
+    ).toBeLessThanOrEqual(2);
+  });
+
+  test("the progress layer tracks the split position", async ({ page }) => {
+    const handle = page.getByTestId("slider-handle");
+    await handle.focus();
+    await page.keyboard.press("Home");
+    const layerAtZero = (await page.getByTestId("slider-progress-layer").boundingBox())!.width;
+    const track = (await page.getByTestId("slider-track").boundingBox())!.width;
+    // At Home the progress frame should be fully visible.
+    expect(Math.abs(layerAtZero - track)).toBeLessThanOrEqual(2);
+  });
+
   test("both frames are labelled for assistive tech", async ({ page }) => {
     const imgs = page.locator("img");
     const n = await imgs.count();

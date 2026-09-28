@@ -79,6 +79,8 @@ export default function SemanticSearch() {
       title="Search evidence"
       testId="semantic-search"
       dataSource={result?.source}
+      dataQuery={submitted}
+      dataResultQuery={result?.data.query}
       actions={result ? <SourceBadge source={result.source} testId="search-source" /> : undefined}
     >
       <form
