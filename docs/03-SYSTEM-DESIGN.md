@@ -217,31 +217,66 @@ def register_field_pair(
     return warped_progress, round(inlier_ratio, 3), "ALIGNED_SUCCESS"
 
 ### 2.2 3D Motion Parallax & Thin Plate Spline (TPS) Non-Planar Compensation
-In drone photogrammetry over uneven terrain or maturing tree canopies, pure planar homography suffers from **motion parallax** (the tops of trees shift relative to ground coordinates due to camera translation $\Delta X, \Delta Y, \Delta Z$ and gimbal pitch/roll changes). 
 
-When condition number $\kappa(H) > 85.0$ or when residual SIFT inlier RMSE exceeds $3.5\text{ px}$, the pipeline triggers local non-rigid deformation via **Thin Plate Splines (TPS)**:
+> **SUPERSEDED in v1.2.0 — do not implement from this section.** The code below
+> cannot run and its stated trigger does not work. Authoritative implementation:
+> `backend/services/homography_service.py` (`thin_plate_spline_weights`,
+> `thin_plate_spline_field`, `estimate_nonplanarity`).
 
-```python
-def register_with_tps_fallback(
-    img_before_rgb: np.ndarray,
-    img_progress_rgb: np.ndarray,
-    pts_src: np.ndarray,
-    pts_dst: np.ndarray
-) -> np.ndarray:
-    """
-    Applies Thin Plate Spline (TPS) local mesh warping when 3D canopy parallax breaks planar homography.
-    """
-    tps = cv2.createThinPlateSplineShapeTransformer()
-    # Format points for OpenCV shape transformer: (1, N, 2)
-    src_shape = pts_src.reshape(1, -1, 2)
-    dst_shape = pts_dst.reshape(1, -1, 2)
-    
-    matches = [cv2.DMatch(i, i, 0) for i in range(len(pts_src))]
-    tps.estimateTransformation(dst_shape, src_shape, matches)
-    
-    warped = tps.warpImage(img_progress_rgb)
-    return warped
+In drone photogrammetry over uneven terrain or maturing tree canopies, pure
+planar homography suffers from **motion parallax** — tree crowns shift relative
+to ground coordinates under camera translation and gimbal motion.
+
+**Two defects in the original design:**
+
+**1. The API does not exist.** The sample called
+`cv2.createThinPlateSplineShapeTransformer()`. OpenCV 4.10 exposes no
+shape-transformer symbol in its Python bindings at all (verified: no attribute
+matching `ThinPlate` or `ShapeTransform` exists). The documented fallback could
+never have run. TPS is a closed-form linear solve, so it is now implemented
+directly in NumPy:
+
 ```
+solve  [[K, Phi], [Phi^T, 0]] [w; lam] = [Q; 0],   Phi = [x, y, 1]
+f(x)   = lam_affine . x + b + sum_i w_i * U(||x - p_i||),   U(r) = r^2 log r^2
+```
+
+The homogeneous column of `Phi` is load-bearing in **both** directions. An
+earlier implementation padded `[[K, P], [P^T, 0]]` out to `(n+3)` with zeros,
+leaving one row and one column identically zero: the smallest singular value was
+exactly `0.0`, and `np.linalg.solve` raised with no hint at the cause. Control
+points are also normalised to the centroid with unit mean radius, because raw
+pixel coordinates make the system badly conditioned.
+
+**2. The stated trigger does not work.** The original condition was
+`kappa(H) > 85.0 OR inlier RMSE > 3.5 px`. Measured:
+
+| Case | condition number | inlier RMSE | inlier ratio | triggered? |
+| :--- | --: | --: | --: | :--- |
+| clean 8-degree rotation, 15 px shift | **2580** | 0.47 px | 0.954 | would fire — wrongly |
+| 10 px deliberate parallax | 6769 | 1.91 px | 0.287 | no — wrongly missed |
+| 20 px deliberate parallax | 16684 | 1.60 px | 0.180 | no — wrongly missed |
+| 35 px deliberate parallax | **36412** | 1.69 px | 0.150 | no — wrongly missed |
+
+`kappa` exceeds 85 on a *clean* rotation, so that clause fires on essentially
+every image and cannot discriminate. Inlier RMSE never reaches 3.5 px in any
+case, so that clause can never fire at all. Neither is evidence of parallax:
+
+- **kappa** measures how the fit absorbs minor perspective, not out-of-plane motion.
+- **inlier RMSE** is scored only on the points a robust estimator selected as
+  inliers, so as contamination grows it returns a smaller and ever more
+  self-consistent subset rather than a larger residual. It saturates.
+
+**Replacement trigger:** the **inlier ratio**, the only measured quantity that
+varies monotonically with applied parallax (0.955 -> 0.254 -> 0.142 -> 0.150),
+combined with a **non-planarity** measurement (RMS residual after removing the
+best-fit affine component) as a secondary discriminator, so that genuine
+parallax is distinguished from two unrelated scenes.
+
+**The fallback is also validated before being kept.** A non-rigid model has more
+freedom and will always fit the control points at least as well as a plane, so
+it must improve their RMS by at least 20% to justify the extra warping freedom.
+Otherwise the planar result stands and the rejection is reported.
 
 ---
 

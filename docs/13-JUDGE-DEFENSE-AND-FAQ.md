@@ -30,13 +30,13 @@ Hackathon judges (Cloudinary solutions engineers, VC investors, and senior archi
 ---
 
 ### Q3: "What if the drone takes a photo from a 45-degree angle instead of straight down (nadir)?"
-> **The Killing Response:**  
-> *"That is precisely why we do not use naive pixel-matching or rigid bounding boxes.  
-> 1. When perspective shifts occur, our SIFT + USAC_MAGSAC++ pipeline estimates the $3 \times 3$ projective homography matrix $H$.  
-> 2. We check the singular value condition number $\kappa(H) = \frac{\sigma_{\max}}{\sigma_{\min}}$. If $\kappa(H) \le 85.0$, planar homography successfully warps the $45^\circ$ perspective back into the orthographic baseline coordinate plane.  
-> 3. If extreme angle shifts cause 3D canopy parallax, our system automatically falls back to **Thin Plate Spline (TPS)** localized mesh deformation, warping tree crowns individually based on local keypoint clusters."*
-
----
+> **The Killing Response:**
+> *"That is precisely why we do not use naive pixel-matching or rigid bounding boxes.
+> 1. When perspective shifts occur, our SIFT + USAC_MAGSAC++ pipeline estimates the $3 \times 3$ projective homography matrix $H$, and warps the progress frame into the baseline's coordinate plane.
+> 2. We report the **SIFT inlier ratio** — what share of matched features the geometric model actually explains. On a clean pair we measure 0.95; we treat anything below 0.60 as unfit for a compliance claim and escalate to manual ground-stake calibration rather than presenting the diff.
+> 3. If out-of-plane canopy motion defeats a single plane, we fit a **Thin Plate Spline** to the inlier correspondences and keep that result **only if it improves the control-point fit by at least 20%** — a non-rigid model always fits at least as well, so the bar is what makes the extra freedom worth taking.
+>
+> One correction we made because we measured it: an earlier version of this answer said we keyed the non-planar fallback on the homography's condition number. That was wrong, and we found it by running the numbers — a plain 8-degree camera rotation produces a condition number of 2580, so the rule would have fired on essentially every photograph while never detecting the parallax it was written for. We now key on the inlier ratio, which is the only quantity that moves monotonically with actual parallax. If you spot us overclaiming again, that is the place to look first."*
 
 ### Q4: "What happens during heavy cloud cover or monsoon season when the sun isn't casting shadows?"
 > **The Killing Response:**  

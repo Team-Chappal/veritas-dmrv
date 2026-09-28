@@ -212,7 +212,14 @@ import cv2
 
 @pytest.fixture
 def synthetic_forest_pair():
-    """Generates an anchor baseline and an affine-transformed progress update."""
+    """Anchor baseline plus a known-transformed progress update.
+
+    Superseded by the scene builders in ``backend/tests/conftest.py``
+    (``make_cluttered_scene``, ``apply_transform``). The earlier version drew
+    identical circles in both frames, so SIFT matched the *drawing artefact*
+    rather than real scene structure, and the pHash fixtures shared identical
+    geometry across "different" images.
+    """
     h, w = 400, 600
     baseline = np.zeros((h, w, 3), dtype=np.uint8)
     # Paint synthetic tree crowns
@@ -231,26 +238,44 @@ def synthetic_forest_pair():
     return baseline, progress
 
 def test_sift_registration_inlier_ratio(synthetic_forest_pair):
-    from backend.services.homography_service import register_field_pair
-    
-    baseline, progress = synthetic_forest_pair
-    warped, inlier_ratio, status = register_field_pair(baseline, progress)
-    
-    assert status == "ALIGNED_SUCCESS"
-    assert inlier_ratio > 0.65
-    assert warped.shape == baseline.shape
+    """register_field_pair now returns a result object carrying an explicit
+    status, rather than a tuple, so that a failure cannot be silently ignored
+    by a caller that forgets to check it.
+    """
+    from services.homography_service import (
+        INLIER_RATIO_FLOOR, RegistrationStatus, register_field_pair,
+    )
 
-def test_radiometric_histogram_matching():
-    """Tests that a cloud-shadowed progress image is normalized back to baseline luminance."""
-    from backend.services.radiometric_service import normalize_radiometry
-    
-    base = np.full((100, 100, 3), 180, dtype=np.uint8)
-    shadowed = np.full((100, 100, 3), 70, dtype=np.uint8) # Dark cloud shadow
-    
-    normalized = normalize_radiometry(shadowed, base)
-    
-    # Normalized image luminance should shift significantly toward baseline
-    assert np.mean(normalized) > 150
+    result = register_field_pair(
+        synthetic_forest_pair["baseline"], synthetic_forest_pair["progress"]
+    )
+    assert result.status == RegistrationStatus.ALIGNED_HOMOGRAPHY
+    assert result.inlier_ratio > 0.70
+    assert result.residual_rmse_px < 2.0
+    assert result.warped_image.shape == synthetic_forest_pair["baseline"].shape
+    # A registration too weak to back a compliance claim must say so.
+    if result.inlier_ratio < INLIER_RATIO_FLOOR:
+        assert any("Inlier ratio" in w for w in result.warnings)
+
+def test_gli_is_invariant_to_illumination():
+    """The property that makes illumination correction unnecessary.
+
+    Replaces the original ``test_radiometric_histogram_matching``, which called
+    a function that no longer exists and asserted the wrong thing: that a
+    cloud-shadowed image should be *brightened back*. It should not be. GLI is
+    algebraically invariant to any per-pixel scalar gain, so the shadow needs no
+    correction at all -- and per-channel histogram matching, the alternative,
+    was measured to inject 2-4x more GLI error than the drift it removes.
+
+    See services/radiometric_service.py for the measurements.
+    """
+    from services.canopy_service import compute_gli
+
+    base = make_soil_scene(canopy_fraction=0.18, seed=3)
+    gli = compute_gli(base)
+    for gain in (0.5, 0.65, 0.8):
+        scaled = np.clip(base.astype(np.float32) * gain, 0, 255).astype(np.uint8)
+        assert np.abs(compute_gli(scaled) - gli).max() < 0.02
 ```
 
 ---

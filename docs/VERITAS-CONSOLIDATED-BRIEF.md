@@ -235,7 +235,7 @@ Mirrored in Pydantic (`CloudinaryMetadataPayload`) and TypeScript (`VeritasAsset
 | :-- | :--- | :--- | :--- |
 | **M1** | Solar Ephemeris | Julian Day → fractional year γ → EoT → declination δ → True Solar Time → hour angle H → elevation α + azimuth θs → expected shadow = (θs+180) mod 360 | Δθ ≤ 12.0° → `PHYSICS_PASS`; else `QUARANTINE_SOLAR_MISMATCH` |
 | **M2** | SIFT + MAGSAC++ Homography | CLAHE on L channel → SIFT (5000 feats) → FLANN kd-tree k=2 → Lowe ratio 0.75 → `findHomography(USAC_MAGSAC, 3.0px, 5000 iters, conf 0.999)` → condition-number check (reject > 1e6) → `warpPerspective` | Inlier ratio < 0.60 → flag for manual ground-stake calibration |
-| **M2b** | TPS Parallax Fallback | When κ(H) > 85.0 or SIFT residual RMSE > 3.5 px → `createThinPlateSplineShapeTransformer` local mesh warp | Non-rigid compensation for 3D canopy parallax |
+| **M2b** | TPS Parallax Fallback | **Original trigger measured wrong and API non-existent** (see §9.6). Now: inlier ratio < 0.70 + non-planarity > 1.5 px → NumPy TPS, kept only if control-point fit improves ≥20% | Non-rigid compensation for 3D canopy parallax |
 | **M3** | Radiometric Normalization + GLI | Per-channel cumulative-histogram quantile transfer (PIF) → GLI = (2G−R−B)/(2G+R+B) → Otsu adaptive threshold → morphological open/close → valid-region mask (ignore warp borders) | `net_canopy_growth_pct` |
 | **M4** | SAM Instance Segmentation | `segment-anything` SAM ViT-B, point-prompted per-sapling crown masks, per-instance pixel areas | Instance count, mean crown area, mean confidence |
 | **M5** | Allometric Biomass | DBH ≈ 2.1·√(canopy_area_m²) → AGB → ×0.47 carbon → × 44/12 CO₂e | tCO₂e per hectare |

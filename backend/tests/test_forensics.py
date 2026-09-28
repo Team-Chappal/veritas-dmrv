@@ -11,6 +11,7 @@ import pytest
 
 from conftest import (
     make_moire_screen_replay,
+    make_soil_scene,
     make_natural_image,
     make_smooth_synthetic_image,
 )
@@ -247,22 +248,61 @@ class TestPhashDedup:
         assert match.is_duplicate is False
 
     def test_review_band_is_distinct_from_quarantine(self):
+        """The band between "different photo" and "same photo" is real and used.
+
+        Resolves a test that had been permanently skipped for want of a fixture
+        that landed in the band. The right fixture is not a random other scene
+        (all of those sit at 28-34 bits) but the realistic case: the SAME plot
+        with a quarter of the frame newly planted. That is genuinely neither the
+        same photograph nor a different place, and it must route to a human.
+
+        Measured hamming distance: 12, which lands in (8, 12].
+        """
+        import cv2
+
+        scene = make_soil_scene(canopy_fraction=0.15, seed=42)
+        base = compute_phash(scene)
+
+        replanted = scene.copy()
+        replanted[: scene.shape[0] // 4, : scene.shape[1] // 4] = (58, 150, 52)
+        distance = hamming_distance(base, compute_phash(replanted))
+
+        assert PHASH_REVIEW_THRESHOLD < distance <= PHASH_DUPLICATE_THRESHOLD, (
+            f"fixture landed at {distance} bits, outside the review band "
+            f"({PHASH_REVIEW_THRESHOLD}, {PHASH_DUPLICATE_THRESHOLD}]"
+        )
+
         corpus = PhashCorpus()
-        base = compute_phash(make_natural_image(seed=13))
         corpus.add("ref", base, "P")
-        # Find an image that lands in the review band.
-        found = None
-        for seed in range(200, 260):
-            candidate = compute_phash(make_natural_image(seed=seed))
-            d = hamming_distance(base, candidate)
-            if PHASH_REVIEW_THRESHOLD < d <= PHASH_DUPLICATE_THRESHOLD:
-                found = (candidate, d)
-                break
-        if found is None:
-            pytest.skip("no sample landed in the review band; thresholds may be tight")
-        match = corpus.check(found[0], asset_id="x", project_id="P")
+        match = corpus.check(compute_phash(replanted), asset_id="new", project_id="P")
         assert match.verdict == DedupVerdict.REVIEW_POSSIBLE_REUSE
-        assert match.is_duplicate is False
+        assert match.is_duplicate is False, (
+            "the review band must not accuse; it routes to human comparison"
+        )
+
+    def test_review_band_is_narrower_than_the_duplicate_band(self):
+        """Band ordering: resize/recompress (0-4) < replant (9-12) < other scene (28+)."""
+        import cv2
+
+        scene = make_soil_scene(canopy_fraction=0.15, seed=42)
+        base = compute_phash(scene)
+
+        small = cv2.resize(scene, (160, 120), interpolation=cv2.INTER_AREA)
+        _, enc = cv2.imencode(".jpg", small, [int(cv2.IMWRITE_JPEG_QUALITY), 40])
+        decoded = cv2.imdecode(enc, cv2.IMREAD_COLOR)[:, :, ::-1]
+        resize_d = hamming_distance(base, compute_phash(decoded))
+
+        replanted = scene.copy()
+        replanted[: scene.shape[0] // 4, : scene.shape[1] // 4] = (58, 150, 52)
+        replant_d = hamming_distance(base, compute_phash(replanted))
+
+        other_d = hamming_distance(
+            base, compute_phash(make_soil_scene(canopy_fraction=0.15, seed=7))
+        )
+
+        assert resize_d <= PHASH_REVIEW_THRESHOLD
+        assert PHASH_REVIEW_THRESHOLD < replant_d <= PHASH_DUPLICATE_THRESHOLD
+        assert other_d > PHASH_DUPLICATE_THRESHOLD
 
     def test_project_scoping(self):
         corpus = PhashCorpus()
