@@ -132,8 +132,30 @@ class TestUrlEngine:
     def test_donor_reel_is_vertical(self):
         d = decoded(build_donor_reel_url(CLOUD, "drones/KEN-042/t01"))
         assert "ar_9:16" in d
-        assert "g_auto:subject" in d
         assert d.endswith(".mp4")
+
+    def test_donor_reel_does_not_use_image_only_subject_cropping(self):
+        """`g_auto:subject` is IMAGE-only and 400s on a /video/ delivery.
+
+        Verified live: "Invalid g_auto for video param 'auto:subject'". Every
+        other URL builder is for images, so this defect was invisible until a
+        video probe existed to render against.
+        """
+        d = decoded(build_donor_reel_url(CLOUD, "drones/KEN-042/t01"))
+        assert "g_auto:subject" not in d
+        # g_center is the verified-working default.
+        assert "g_center" in d
+
+    def test_donor_reel_gravity_is_configurable(self):
+        """g_auto is Cloudinary's video equivalent, but it can answer 423 while
+        tracking-crop is still queued, so it is opt-in rather than the default."""
+        d = decoded(build_donor_reel_url(CLOUD, "drones/KEN-042/t01", gravity="auto"))
+        assert "g_auto" in d
+        assert "g_auto:subject" not in d
+
+    def test_donor_reel_rejects_a_malformed_gravity(self):
+        with pytest.raises(ValueError):
+            build_donor_reel_url(CLOUD, "drones/KEN-042/t01", gravity="auto:subject/x")
 
     def test_donor_reel_preview_slice(self):
         """The documented mitigation for a slow stream during a live demo."""
