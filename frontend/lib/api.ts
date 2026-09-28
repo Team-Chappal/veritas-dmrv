@@ -90,3 +90,61 @@ export async function fetchProvenance(
     signal?.removeEventListener("abort", onAbort);
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Asset collection (rubric bullet 1)                                          */
+/* -------------------------------------------------------------------------- */
+
+import { filterFixture } from "./asset-fixture";
+import type { AssetFilters, AssetListResponse, AssetListResult } from "./assets";
+
+export async function fetchAssets(
+  filters: AssetFilters = {},
+  signal?: AbortSignal
+): Promise<AssetListResult> {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+  }
+  const query = params.toString();
+  const url = `${apiBase()}/api/v1/assets${query ? `?${query}` : ""}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      return {
+        data: filterFixture(filters),
+        source: "fixture",
+        reason: `Backend returned HTTP ${res.status}. Showing bundled fixture collection. ${UNMEASURED}`,
+      };
+    }
+    const body = (await res.json()) as AssetListResponse;
+    const block = body._provenance;
+    // Same rule as the provenance surface: a 200 is not proof of a live read.
+    if (!block || block.mode === "fixture") {
+      return {
+        data: body,
+        source: "fixture",
+        reason: `${block?.caveat ?? block?.evidence ?? "No provenance block."} ${UNMEASURED}`,
+      };
+    }
+    return { data: body, source: "live", reason: "" };
+  } catch (err) {
+    const aborted = err instanceof Error && err.name === "AbortError";
+    return {
+      data: filterFixture(filters),
+      source: "fixture",
+      reason: aborted
+        ? `Backend did not respond within ${REQUEST_TIMEOUT_MS}ms. Showing bundled fixture collection. ${UNMEASURED}`
+        : `Backend unreachable. Showing bundled fixture collection. ${UNMEASURED}`,
+    };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}

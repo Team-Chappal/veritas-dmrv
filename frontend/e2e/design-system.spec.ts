@@ -67,21 +67,18 @@ test.describe("Design-system rules", () => {
     );
     const n = await targets.count();
 
-    // INCONCLUSIVE TODAY, and deliberately not hidden. The page currently has
-    // ZERO interactive controls, so the loop below asserts nothing and this test
-    // passes vacuously. A vacuous pass is a trap: it reads as "sizes verified"
-    // when nothing was measured.
-    //
-    // It becomes a real check the moment 6.2 PortfolioGrid or 6.4 SemanticSearch
-    // lands, both of which add buttons and inputs. The assertion below is the
-    // guard for that moment and must be replaced with `expect(n).toBeGreaterThan(0)`
-    // at that point -- tracked in docs/RUBRIC-TRACEABILITY.md.
+    // This was INCONCLUSIVE when the page had no controls, and passed
+    // vacuously -- which reads as "sizes verified" when nothing was measured.
+    // PortfolioGrid added the first interactive controls (11 filter chips and a
+    // Load more button), so the check is real now and is required to stay real.
+    // A future refactor that removes every control must fail here rather than
+    // quietly restore the vacuous pass.
     expect(
       n,
-      `INCONCLUSIVE: ${n} interactive targets found, so the 44px rule was not ` +
-        "actually exercised. Tighten this to require a non-zero count once the " +
-        "page has controls."
-    ).toBeGreaterThanOrEqual(0);
+      "INCONCLUSIVE: no interactive targets found, so the 44px rule was not " +
+        "exercised. If the page genuinely has no controls, delete this spec " +
+        "rather than let it pass vacuously."
+    ).toBeGreaterThan(0);
 
     for (let i = 0; i < n; i++) {
       const box = await targets.nth(i).boundingBox();
@@ -138,8 +135,10 @@ test.describe("Design-system rules", () => {
         return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
       };
       const fg = parse(getComputedStyle(el).color);
-      // Walk up for the first non-transparent background.
-      let node: HTMLElement | null = el;
+      // Walk up for the first non-transparent background. Typed as Element,
+      // not HTMLElement: parentElement is Element on SVG nodes, and the walk
+      // does not care which it is.
+      let node: Element | null = el;
       let bg = null;
       while (node) {
         const c = parse(getComputedStyle(node).backgroundColor);
