@@ -118,7 +118,13 @@ test.describe("live ticker does not shift layout", () => {
     // 0.0025 that only appeared in CI, because it depends on how slow the
     // metadata is. The ratio is now reserved on the wrapper, so the box is the
     // right size immediately, whatever the network does.
-    const wrapper = page.locator('[data-testid="hotspot-video"]').locator("..");
+    //
+    // This spec navigates for itself: the describe block has no beforeEach and
+    // its neighbours each carry their own `goto`, so without one here the page
+    // was about:blank and the locator waited out the full 30s timeout -- which
+    // said nothing whatsoever about the video.
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const wrapper = page.getByTestId("hotspot-frame");
     const box = await wrapper.boundingBox();
     expect(box!.height, "video wrapper has no height before metadata").toBeGreaterThan(20);
 

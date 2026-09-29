@@ -134,7 +134,10 @@ export default function HotspotVideoPlayer() {
             occupy the identical rectangle, so a marker can never sit a pixel
             off its subject.
           */}
-          <div className="relative aspect-video w-full overflow-hidden rounded border border-slate-800 bg-black">
+          <div
+            data-testid="hotspot-frame"
+            className="relative aspect-video w-full overflow-hidden rounded border border-slate-800 bg-black"
+          >
             <video
               ref={videoRef}
               className="absolute inset-0 h-full w-full"
