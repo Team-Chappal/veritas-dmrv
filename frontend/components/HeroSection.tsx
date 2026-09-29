@@ -44,10 +44,20 @@ export default function HeroSection() {
           {/* Interactive CTAs */}
           <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 mb-14 w-full">
             <a
-              href="#verification-lab"
-              className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl bg-slate-900 dark:bg-white px-6 py-3 text-sm sm:text-base font-semibold text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-md`}
+              href="/console"
+              className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl bg-slate-900 dark:bg-white px-6 py-3.5 text-sm sm:text-base font-bold text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-md`}
             >
-              <span>Verify Claim (Live Input & Output)</span>
+              <span>Launch Forensic Console ↗</span>
+              <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            </a>
+
+            <a
+              href="#verification-lab"
+              className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface px-6 py-3.5 text-sm sm:text-base font-semibold text-slate-800 dark:text-slate-200 hover:border-slate-400 dark:hover:border-slate-600 transition-colors shadow-xs`}
+            >
+              <span>Quick Verify (Input & Output)</span>
               <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
               </svg>
@@ -55,19 +65,9 @@ export default function HeroSection() {
 
             <a
               href="#questions"
-              className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-surface px-6 py-3 text-sm sm:text-base font-medium text-slate-800 dark:text-slate-200 hover:border-slate-400 dark:hover:border-slate-600 transition-colors shadow-xs`}
-            >
-              <span>The Core Dilemma & Answers</span>
-              <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-              </svg>
-            </a>
-
-            <a
-              href="#methodology"
               className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl border border-transparent px-4 py-3 text-sm font-mono text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors`}
             >
-              <span>Chave 2014 Allometry & Equations ↗</span>
+              <span>The Core Dilemma & Answers ↓</span>
             </a>
           </div>
 

@@ -12,7 +12,7 @@ import { expect, test } from "./fixtures";
 
 test.describe("ProofOfImpactStudio", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   test("shows the inlier ratio AND the canopy delta", async ({ page }) => {

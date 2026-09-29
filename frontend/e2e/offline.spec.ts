@@ -18,7 +18,7 @@ import { expect, test } from "./fixtures";
  */
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/console", { waitUntil: "domcontentloaded" });
 });
 
 test.describe("capture queue durability", () => {

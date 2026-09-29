@@ -21,7 +21,7 @@ const ASSETS_ROUTE = /\/api\/v1\/assets(\?|$)/;
 
 test.describe("PortfolioGrid", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   test("renders a grid of asset cards", async ({ page }) => {

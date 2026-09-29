@@ -51,7 +51,7 @@ test.describe("rubric screenshots", () => {
         /* capture is best-effort; a stale queue must not fail the evidence */
       }
     });
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     // Let fonts settle and any entry animation finish, so the capture is of a
     // resting page rather than one mid-transition.
     await page.evaluate(() => document.fonts.ready);

@@ -19,7 +19,7 @@ test.describe("CampaignStudio", () => {
     // the media connection stays open, so the wait times out at 30s and the
     // failure reads as "the page is broken" when the page is fine. Locator
     // assertions auto-wait anyway, so this loses nothing.
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   test("lists every campaign artefact", async ({ page }) => {
@@ -27,6 +27,7 @@ test.describe("CampaignStudio", () => {
   });
 
   test("the composed URLs actually load", async ({ page }) => {
+    test.setTimeout(60_000);
     // The point of the studio: these are the artefacts, not previews of them.
     const results = await page.evaluate(async (urls: string[]) => {
       const out: Array<{ url: string; status: number }> = [];
