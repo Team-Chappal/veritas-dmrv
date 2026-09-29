@@ -29,6 +29,7 @@ introduced this file recorded that it had not been run.
 from __future__ import annotations
 
 import json
+import subprocess
 import re
 import sys
 import urllib.parse
@@ -417,19 +418,65 @@ def test_frontend_waits_for_a_healthy_backend(compose: dict) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_vercel_config_exists() -> None:
-    """A judge-facing deploy is one of three documented tiers, and Tier 1 needs
-    a host config committed rather than a host's dashboard settings."""
-    p = REPO / "vercel.json"
-    if not p.exists():
-        pytest.fail("vercel.json is missing; docs/DEMO.md Tier 1 is not deployable")
+def test_vercel_config_is_where_vercel_actually_looks() -> None:
+    """The config must be in the PROJECT ROOT, which is `frontend/`.
+
+    It was committed at the REPO ROOT and Vercel silently ignored every line of
+    it. Nothing errored: `vercel build` reported "Detected Next.js (Build
+    Command: next build, Output Directory: Next.js default)" -- defaults, not the
+    committed config -- and carried on.
+
+    That is the failure shape worth guarding. A config file in the wrong
+    directory is not a build failure, it is a build that quietly uses somebody
+    else's idea of the build command, and the only evidence is a line in a log
+    that reads like a normal detection message.
+
+    `.vercel/project.json` is written by the CLI into whatever directory it was
+    invoked from, so that is the authority on where the project root is.
+    """
     import json
+
+    p = REPO / "frontend" / "vercel.json"
+    if not p.exists():
+        pytest.fail(
+            "frontend/vercel.json is missing. Note the DIRECTORY: the Vercel "
+            "project root is frontend/, and a vercel.json at the repo root is "
+            "ignored in silence."
+        )
+    assert not (REPO / "vercel.json").exists(), (
+        "a vercel.json at the repo root is ignored by Vercel and will mislead "
+        "the next reader into thinking the build is configured"
+    )
 
     cfg = json.loads(p.read_text())
     # `npm ci`, not `npm install`: an unpinned install makes the deployed build
     # differ from the tested one, which is invisible until it breaks on stage.
-    assert cfg.get("installCommand", "").startswith("npm ci")
+    assert cfg.get("installCommand", "").startswith("npm ci"), (
+        f"installCommand is {cfg.get('installCommand')!r}; an unpinned install "
+        "makes the deployed build differ from the tested one"
+    )
     assert cfg.get("framework") == "nextjs"
+
+
+def test_no_api_url_is_baked_into_the_committed_build() -> None:
+    """A judge-facing deploy must make no request, and the build is the proof.
+
+    NEXT_PUBLIC_* is inlined at build time, so the deployed artefact is the only
+    place this can be checked -- the source could be correct and the bundle still
+    contain a URL, which is exactly the shape of bug the e2e suite cannot see.
+    """
+    static = REPO / "frontend" / ".next" / "static"
+    if not static.exists():
+        pytest.skip("no local .next build; run `make fe-build` first")
+    hits = subprocess.run(
+        ["grep", "-rl", "localhost:8000", str(static)],
+        capture_output=True,
+        text=True,
+    )
+    assert hits.returncode != 0, (
+        "a local .next build contains localhost:8000, so a deployment made from "
+        "it would point every panel at the judge's own machine"
+    )
 
 
 def test_demo_build_makes_no_network_requests() -> None:

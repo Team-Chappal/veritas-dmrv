@@ -43,9 +43,27 @@ with the backend **entirely absent** — and every panel is badged `Fixture` wit
 reason, which is the product behaving correctly rather than degraded.
 
 ```bash
-cd frontend
-npx vercel --prod          # or: vercel link && vercel --prod
+cd frontend && npx vercel --prod
 ```
+
+**DEPLOYED 2026-09-29:** https://frontend-pi-dusky-zdgjl1ct68.vercel.app
+— `HTTP 200`, 83,787 bytes, service worker and manifest both 200, all six panels
+present in the served HTML, and no API URL anywhere in the delivered bundle.
+Verified by fetching the deployment, not by trusting the CLI's success message.
+
+**`vercel.json` must be in `frontend/`, not the repo root.** It was committed at
+the root and Vercel ignored every line of it without a word — `vercel build`
+simply reported *"Detected Next.js (Build Command: next build, Output Directory:
+Next.js default)"*, which is the *default*, not the committed config. A config in
+the wrong directory is not a build failure; it is a build that quietly uses
+somebody else's idea of the build command. A spec now pins the location.
+
+**Known local-only wrinkle:** `vercel build` on this machine fails with
+`EALLOWSCRIPTS` during `npm ci`. That is the user's `~/.npmrc` carrying an
+`allow-scripts=` list, which the Vercel CLI turns into a flag npm 12 rejects in a
+project-scoped install. Plain `npm ci` in the same directory is fine, and the
+deployed build runs on Vercel's own infrastructure — so it is a pre-flight
+artefact and not a project defect. Worth knowing before someone chases it.
 
 - **Set no `NEXT_PUBLIC_API_URL`.** An unset API is a supported first-class
   state; the page makes **no network requests at all** and says so.
