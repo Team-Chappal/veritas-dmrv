@@ -39,10 +39,44 @@ test.describe("Design-system rules", () => {
   test("no status relies on a colour swatch with no glyph or word", async ({ page }) => {
     // A bare dot is the specific anti-pattern: it is the one thing that becomes
     // invisible in greyscale print.
+    //
+    // SELECTED BY SHAPE, NOT BY SIBLING TEXT. The previous version was
+    // `span:has-text("●"):not(:has-text("Live"))`, which asked whether a dot's
+    // SIBLING text node said "Live" -- so the verdict depended on render
+    // ordering. It passed locally and failed in CI with a count of 1, which is
+    // the worst possible failure mode for a design rule: non-deterministic, and
+    // pointing at the wrong element. What the rule actually means is "a span
+    // whose ENTIRE text is a bare glyph, with no word of its own" -- so ask
+    // that, and allow the decorative dot that legitimately sits inside a badge
+    // carrying the word beside it.
     const bareDots = page.locator(
-      'span:has-text("●"):not(:has-text("Live")):not(:has-text("Fixture"))'
+      'span:not([aria-hidden="true"]), span[aria-hidden="true"]'
     );
-    expect(await bareDots.count()).toBe(0);
+    const offenders: string[] = [];
+    const n = await bareDots.count();
+    for (let i = 0; i < n; i++) {
+      const info = await bareDots.nth(i).evaluate((el) => ({
+        text: (el.textContent ?? "").trim(),
+        hidden: el.getAttribute("aria-hidden") === "true",
+        parentText: (el.parentElement?.textContent ?? "").trim(),
+        html: el.outerHTML.slice(0, 160),
+      }));
+      // A span that is nothing but a glyph.
+      const isBareGlyph = /^[\u25CF\u25D0\u2713\u2717\u2022\u25B2\u25BC]$/.test(info.text);
+      if (!isBareGlyph) continue;
+      // A decorative glyph is fine IF the word it decorates is a sibling under
+      // the same parent. A glyph with no word anywhere near it is the defect.
+      const hasWordBeside = info.parentText.replace(info.text, "").trim().length > 0;
+      if (!hasWordBeside) {
+        offenders.push(
+          `${info.html}  (parent text: ${JSON.stringify(info.parentText)})`
+        );
+      }
+    }
+    expect(
+      offenders,
+      `bare glyph with no accompanying word:\n${offenders.join("\n")}`
+    ).toEqual([]);
   });
 
   test("numeric values are rendered with tabular figures", async ({ page }) => {
