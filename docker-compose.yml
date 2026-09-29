@@ -1,0 +1,74 @@
+# VERITAS dMRV — demo stack
+#
+# `docker compose up` reaches a working demo on a clean clone, with no
+# credentials. That is the S7 exit criterion, so credential absence is the
+# DEFAULT here rather than an error: core.config reports fixture mode and every
+# panel badges itself accordingly. Supplying Cloudinary credentials is opt-in via
+# a .env file that is not required to exist.
+#
+# THE ONE THING THAT WILL BITE
+#
+# Next.js inlines NEXT_PUBLIC_* at BUILD time, so NEXT_PUBLIC_API_URL cannot be
+# set as a runtime environment variable on this service. It is a build arg
+# below, pointing at http://localhost:8000 -- the PUBLISHED backend port, not the
+# compose service name, because the value is used by a browser on the host and
+# "backend" does not resolve there.
+#
+# The container-to-container name is still used, for the backend's own
+# CORS origin list, where the name does resolve.
+
+name: veritas
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: veritas-backend:local
+    environment:
+      APP_URL: http://localhost:8000
+      # Fixture mode unless these are present. Deliberately NOT required: an
+      # empty value must be a supported state, so it is what CI runs.
+      CLOUDINARY_URL: ${CLOUDINARY_URL:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # Build-time, because the browser needs it. Must be the PUBLISHED
+        # backend address, since the browser resolves this name, not Docker.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: veritas-frontend:local
+    depends_on:
+      backend:
+        # Waiting for health, not just for start: the frontend renders panels
+        # against the API on first paint, and a race here shows up as a
+        # fixture-badge flash that then clears -- which reads as a bug in the
+        # provenance labelling rather than a startup ordering problem.
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
