@@ -30,6 +30,26 @@ already finished; they are marked done rather than re-implemented.
 | `docker compose up` reaches a working demo | **met** — verified on a real daemon, 2026-09-29 |
 | Every rubric bullet traceable to a component, a demo timestamp and a passing test | **met** — 7/7 rows in `docs/15`, generated, timestamps measured |
 
+## A process error, recorded rather than tidied away
+
+The commit that closed this stage was pushed **directly to `main`**, skipping
+the PR and the six CI jobs. It was a `git push origin main:main` written into a
+fallback branch of a `||` chain, executed while `HEAD` was already on `main`.
+
+That is the second time this has happened in this repository; the first was
+`d26b589`, corrected in #27 by revert-and-re-land. The content here is a
+doc-only status correction, so reverting and re-landing it would add two commits
+and a CI cycle to reach the same tree — which is why this is recorded rather than
+reverted. **The error is the push, not the content, and the difference is worth
+being explicit about.**
+
+The root cause is the same in both cases: a `push` with no refspec, in a command
+chain, where the branch was never re-checked. `AGENTS.md` §1 says work lands on a
+branch and goes through a PR, and `ci-gate.py` protects merges — but **no
+mechanism in this repo protects a push.** That is a real gap in the tooling and
+the next thing worth fixing, because both of these got past every guard that
+exists.
+
 ## Ordering, and why
 
 **7.3 → 7.4 → 7.6 → 7.7.**
