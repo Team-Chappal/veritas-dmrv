@@ -124,10 +124,20 @@ export default function HotspotVideoPlayer() {
 
       <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div>
-          <div className="relative overflow-hidden rounded border border-slate-800 bg-black">
+          {/*
+            The aspect ratio is reserved ON THE WRAPPER, and the video is filled
+            into it. A <video> has no intrinsic size until its metadata
+            arrives, so without this the box was zero-height and then jumped to
+            16:9 -- a real layout shift of 0.0025, caught by the CLS criterion
+            the moment this component was added. Filling the video into a
+            pre-sized box also guarantees the overlay and the video always
+            occupy the identical rectangle, so a marker can never sit a pixel
+            off its subject.
+          */}
+          <div className="relative aspect-video w-full overflow-hidden rounded border border-slate-800 bg-black">
             <video
               ref={videoRef}
-              className="block w-full"
+              className="absolute inset-0 h-full w-full"
               src={DEMO_VIDEO_URL}
               controls
               preload="metadata"

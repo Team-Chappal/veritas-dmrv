@@ -25,15 +25,35 @@ test.describe("live ticker does not shift layout", () => {
     // Install the observer first, and clear the buffer so early page-load shift
     // is not attributed to the ticker.
     await page.addInitScript(() => {
-      (window as unknown as { __cls: number }).__cls = 0;
+      const w = window as unknown as {
+        __cls: number;
+        __clsSources: string[];
+      };
+      w.__cls = 0;
+      w.__clsSources = [];
       new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           const e = entry as PerformanceEntry & {
             hadRecentInput: boolean;
             value: number;
+            sources?: Array<{ node?: Element | null }>;
           };
           if (e.hadRecentInput) continue;
-          (window as unknown as { __cls: number }).__cls += e.value;
+          w.__cls += e.value;
+          // NAME THE CULPRIT. A bare "0.0025" sends the reader hunting; this
+          // is what turned "CLS is not zero" into "<video> has no intrinsic
+          // size until its metadata loads" on the first attempt.
+          for (const s of e.sources ?? []) {
+            const el = s.node as HTMLElement | null;
+            if (!el) continue;
+            w.__clsSources.push(
+              `${el.tagName.toLowerCase()}${
+                el.className && typeof el.className === "string"
+                  ? "." + el.className.split(/\s+/).slice(0, 2).join(".")
+                  : ""
+              }`
+            );
+          }
         }
       }).observe({ type: "layout-shift", buffered: true });
     });
@@ -45,14 +65,22 @@ test.describe("live ticker does not shift layout", () => {
     // Several ticks. One tick could pass by luck; four cannot.
     await page.waitForTimeout(TICK_MS * 4 + 400);
 
-    const cls = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
+    const { cls, sources } = await page.evaluate(() => {
+      const w = window as unknown as { __cls: number; __clsSources: string[] };
+      return { cls: w.__cls, sources: [...new Set(w.__clsSources)] };
+    });
     const later = await page.getByTestId("ticker-value-assets").innerText();
 
     // The values must genuinely have changed, or "zero shift" is vacuous.
     expect(later, "ticker did not move, so zero CLS proves nothing").not.toBe(first);
     expect(Number(later.replace(/,/g, ""))).toBeGreaterThan(0);
 
-    expect(cls, `cumulative layout shift was ${cls}, not 0`).toBe(0);
+    expect(
+      cls,
+      `cumulative layout shift was ${cls}, not 0. Culprits: ${
+        sources.join(", ") || "none reported"
+      }`
+    ).toBe(0);
   });
 
   test("the strip's box is identical before and after a tick", async ({ page }) => {
@@ -81,6 +109,28 @@ test.describe("live ticker does not shift layout", () => {
       .getByTestId("ticker-value-assets")
       .evaluate((el) => (el as HTMLElement).style.minWidth);
     expect(reserved).toMatch(/ch$/);
+  });
+
+  test("the video box EXISTS before its metadata does", async ({ page }) => {
+    // Pins the actual defect rather than relying on the ticker test catching it
+    // again. A <video> has no intrinsic size until its metadata arrives, so the
+    // box used to be zero-height and then jump to 16:9 -- a layout shift of
+    // 0.0025 that only appeared in CI, because it depends on how slow the
+    // metadata is. The ratio is now reserved on the wrapper, so the box is the
+    // right size immediately, whatever the network does.
+    const wrapper = page.locator('[data-testid="hotspot-video"]').locator("..");
+    const box = await wrapper.boundingBox();
+    expect(box!.height, "video wrapper has no height before metadata").toBeGreaterThan(20);
+
+    const meta = await page
+      .getByTestId("hotspot-video")
+      .evaluate((el) => (el as HTMLVideoElement).readyState);
+    // Whether or not metadata has landed yet, the box must already be right.
+    const after = await wrapper.boundingBox();
+    expect(after!.height).toBeCloseTo(box!.height, 1);
+    // And it is a 16:9 box, not an arbitrary one.
+    expect(box!.width / box!.height).toBeCloseTo(16 / 9, 1);
+    void meta;
   });
 
   test("the ticker labels itself as a demonstration", async ({ page }) => {
