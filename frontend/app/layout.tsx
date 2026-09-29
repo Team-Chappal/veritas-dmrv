@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ThemeProvider } from "@/components/ThemeContext";
 
 export const metadata: Metadata = {
-  title: "VERITAS dMRV",
+  title: "VERITAS dMRV · Planetary Ground Truth & Forensic Media Intelligence",
   description:
-    "AI-powered impact & sustainability media intelligence platform — visual ground-truth and cryptographic media provenance.",
+    "Open digital Measurement, Reporting, and Verification (dMRV) platform. Astronomical solar physics, SIFT homography computer vision, Chave 2014 allometry, and cryptographic C2PA provenance.",
 };
 
 export default function RootLayout({
@@ -13,8 +14,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="bg-canvas text-slate-200 antialiased">{children}</body>
+    <html lang="en" className="scroll-smooth">
+      <body className="bg-canvas text-slate-900 dark:text-slate-100 antialiased min-h-screen">
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

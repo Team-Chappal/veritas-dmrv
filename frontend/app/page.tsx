@@ -1,28 +1,22 @@
-/**
- * Stage 0 toolchain proof.
- *
- * The full Audit Command Center lands in Stage 6. This page exists so that CI
- * verifies the Next.js 15 + React 19 toolchain on every push rather than
- * discovering a broken toolchain on the day the frontend is built. It also
- * carries the design-system baseline, so later components inherit settled
- * tokens instead of inventing their own.
- *
- * The three cards below are the rubric surfaces that Stage 6 must deliver:
- *   1. Organize large collections        -> PortfolioGrid
- *   2. Identify projects / visual signals -> SemanticSearch + auto-tags
- *   3. Compare before-and-after          -> ProofOfImpactStudio
- */
-
 import CampaignStudio from "@/components/CampaignStudio";
-import PortfolioGrid from "@/components/PortfolioGrid";
-import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
+import ConsoleHeaderSection from "@/components/ConsoleHeaderSection";
+import CoreQuestionsSection from "@/components/CoreQuestionsSection";
+import FeaturesBentoSection from "@/components/FeaturesBentoSection";
+import FooterSection from "@/components/FooterSection";
 import ForensicPhysicsHUD from "@/components/ForensicPhysicsHUD";
+import HeroSection from "@/components/HeroSection";
 import HotspotVideoPlayer from "@/components/HotspotVideoPlayer";
+import MethodologySection from "@/components/MethodologySection";
 import MetricTicker from "@/components/MetricTicker";
+import Navbar from "@/components/Navbar";
 import OfflineResilience from "@/components/OfflineResilience";
+import PortfolioGrid from "@/components/PortfolioGrid";
 import ProjectTimeline from "@/components/ProjectTimeline";
-import SemanticSearch from "@/components/SemanticSearch";
+import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
 import ProvenancePanel from "@/components/ProvenancePanel";
+import SemanticSearch from "@/components/SemanticSearch";
+import TechStackSection from "@/components/TechStackSection";
+import WorkflowSection from "@/components/WorkflowSection";
 
 type Stage = {
   id: string;
@@ -63,93 +57,102 @@ const STAGES: Stage[] = [
 ];
 
 const STATUS_STYLE: Record<Stage["status"], string> = {
-  built: "border-verified/50 bg-verified/10 text-verified",
-  "in-progress": "border-amber-500/50 bg-amber-500/10 text-amber-300",
-  planned: "border-slate-700 bg-slate-800/60 text-slate-400",
+  built: "border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-verified/50 dark:bg-verified/10 dark:text-verified",
+  "in-progress": "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  planned: "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400",
 };
 
 export default function Home() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-10 px-6 py-16">
-      <header className="flex flex-col gap-3">
-        <span className="font-mono text-xs uppercase tracking-widest text-telemetry">
-          Code Cubicle 6.0 · Problem Statement 02 (Cloudinary)
-        </span>
-        <h1 className="text-4xl font-bold tracking-tight text-white">
-          VERITAS dMRV
-        </h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-slate-400">
-          Visual ground-truth and cryptographic media provenance for field
-          impact evidence. Every quantitative claim in this platform is
-          generated from a reference implementation and regression-tested — a
-          number nothing supports is treated as a defect.
-        </p>
-      </header>
+    <div className="flex min-h-screen flex-col bg-[#F8FAFC] dark:bg-canvas text-slate-900 dark:text-slate-100 transition-colors duration-200">
+      {/* Futuristic Floating Command Bar */}
+      <Navbar />
 
-      <section aria-label="Build stages" className="grid gap-4 sm:grid-cols-3">
-        {STAGES.map((stage) => (
-          <article
-            key={stage.id}
-            className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-surface p-5"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-sm font-bold text-white">
-                {stage.id}
-              </span>
-              {/* Status is never conveyed by colour alone. */}
-              <span
-                className={`rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold uppercase ${STATUS_STYLE[stage.status]}`}
+      <main className="flex-1">
+        {/* Editorial Landing Hero */}
+        <HeroSection />
+
+        {/* The Core Epistemological Questions & Veritas Answers */}
+        <CoreQuestionsSection />
+
+        {/* Pure Mathematical Methodology */}
+        <MethodologySection />
+
+        {/* 5-Stage Scientific Architecture Workflow */}
+        <WorkflowSection />
+
+        {/* Core Forensic Capabilities */}
+        <FeaturesBentoSection />
+
+        {/* Architecture & Engineering Tech Stack */}
+        <TechStackSection />
+
+        {/* Stage 6 Live Audit Command Center */}
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 sm:px-6 lg:px-8 py-12">
+          <ConsoleHeaderSection />
+
+          {/* Development Roadmap Stages */}
+          <section aria-label="Build stages" className="grid gap-4 sm:grid-cols-3">
+            {STAGES.map((stage) => (
+              <article
+                key={stage.id}
+                className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-surface/95 p-5 shadow-xs"
               >
-                {stage.status === "built" ? "✓ done" : stage.status}
-              </span>
-            </div>
-            <h2 className="text-base font-semibold text-white">{stage.title}</h2>
-            <p className="font-mono text-[11px] uppercase tracking-wider text-telemetry">
-              {stage.rubric}
-            </p>
-            <p className="text-xs leading-relaxed text-slate-400">
-              {stage.detail}
-            </p>
-          </article>
-        ))}
-      </section>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-sm font-bold text-slate-900 dark:text-white">
+                    {stage.id}
+                  </span>
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold uppercase ${STATUS_STYLE[stage.status]}`}
+                  >
+                    {stage.status === "built" ? "✓ done" : stage.status}
+                  </span>
+                </div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">{stage.title}</h2>
+                <p className="font-mono text-[11px] uppercase tracking-wider text-sky-700 dark:text-telemetry font-semibold">
+                  {stage.rubric}
+                </p>
+                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
+                  {stage.detail}
+                </p>
+              </article>
+            ))}
+          </section>
 
-      {/* The hotspot video player: real <track> captions, clickable markers. */}
-      <HotspotVideoPlayer />
+          {/* Rubric intro & timeline */}
+          <ProjectTimeline />
 
-      {/* Live figures that change without moving anything (CLS == 0). */}
-      <MetricTicker />
+          {/* Rubric bullet 1: Portfolio Grid */}
+          <PortfolioGrid />
 
-      {/* Offline resilience: the queue, and the data mode as an explicit choice. */}
-      <OfflineResilience />
+          {/* Rubric bullet 2: Hotspot Video Player */}
+          <HotspotVideoPlayer />
 
-      {/* The shadow-coherence check, including the case it refuses to answer. */}
-      <ForensicPhysicsHUD />
+          {/* Rubric bullet 3: Before / After Proof of Impact Studio */}
+          <ProofOfImpactStudio />
 
-      {/* Rubric intro + bullet 4 — timeline with its gaps, and the summary card. */}
-      <ProjectTimeline />
+          {/* Rubric bullet 4: Campaign Studio */}
+          <CampaignStudio />
 
-      {/* Rubric bullet 4 — campaign content, including the one that is gated. */}
-      <CampaignStudio />
+          {/* Rubric bullet 5: Semantic Search */}
+          <SemanticSearch />
 
-      {/* Rubric bullet 3 — before/after, qualified by registration quality. */}
-      <ProofOfImpactStudio />
+          {/* Solar Ephemeris & Shadow Coherence HUD */}
+          <ForensicPhysicsHUD />
 
-      {/* Rubric bullet 5 — search, with what it could not find. */}
-      <SemanticSearch />
+          {/* Rubric bullet 6: Cryptographic Provenance Panel */}
+          <ProvenancePanel />
 
-      {/* Rubric bullet 1 — bulk-organized evidence at a glance. */}
-      <PortfolioGrid />
+          {/* Live Telemetry Metric Ticker */}
+          <MetricTicker />
 
-      {/* Rubric bullet 6 — the first real Stage 6 component on the page. */}
-      <ProvenancePanel />
+          {/* Offline Resilience & Data Mode Switcher */}
+          <OfflineResilience />
+        </div>
+      </main>
 
-      <footer className="border-t border-slate-800 pt-6 font-mono text-xs text-slate-500">
-        <p>
-          Fixture mode is the default: with no Cloudinary credentials present
-          the platform degrades to local assets rather than failing.
-        </p>
-      </footer>
-    </main>
+      {/* Comprehensive Footer & Open-Source Specifications */}
+      <FooterSection />
+    </div>
   );
 }

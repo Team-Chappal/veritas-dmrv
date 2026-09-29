@@ -8,10 +8,11 @@ import type { Config } from 'tailwindcss';
  *    status carries an icon and a text label too (WCAG 2.2, "use of colour").
  *  - #38BDF8 is reserved for telemetry (coordinates, azimuths, hashes) so a
  *    number is never confused with a status.
- *  - All numeric metrics render in Geist Mono with tabular-nums so live ticker
- *    updates cause zero layout shift.
+ *  - All numeric metrics render in Geist Mono / JetBrains Mono with tabular-nums
+ *    so live ticker updates cause zero layout shift.
  */
 const config: Config = {
+  darkMode: "class",
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
@@ -23,8 +24,9 @@ const config: Config = {
         telemetry: "#38BDF8",
       },
       fontFamily: {
-        sans: ["var(--font-geist-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "ui-monospace", "monospace"],
+        sans: ["'Plus Jakarta Sans'", "var(--font-geist-sans)", "system-ui", "sans-serif"],
+        display: ["'Plus Jakarta Sans'", "system-ui", "sans-serif"],
+        mono: ["'JetBrains Mono'", "var(--font-geist-mono)", "ui-monospace", "monospace"],
       },
     },
   },
