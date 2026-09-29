@@ -287,7 +287,7 @@ function SummaryCard({
               href={r.href}
               title={r.hint}
               data-testid="summary-source"
-              className="mt-1 inline-flex min-h-11 items-center text-xs text-telemetry underline"
+              className="mt-1 inline-flex min-h-11 min-w-11 items-center justify-center text-xs text-telemetry underline"
             >
               Source<span className="sr-only"> for {r.label}: {r.hint}</span>
             </a>
@@ -297,7 +297,6 @@ function SummaryCard({
 
       <p className="mt-4 text-sm leading-relaxed text-slate-300">{summary.text}</p>
       <p className="mt-2 text-xs text-slate-400">
-        <span aria-hidden="true">● </span>
         {summary.note} Generator: {summary.generator}
         {summary.llm_enhanced ? " (LLM-assisted)" : " (no language model involved)"}.
       </p>
