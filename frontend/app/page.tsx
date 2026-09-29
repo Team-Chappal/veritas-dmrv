@@ -4,6 +4,7 @@ import CoreQuestionsSection from "@/components/CoreQuestionsSection";
 import FeaturesBentoSection from "@/components/FeaturesBentoSection";
 import FooterSection from "@/components/FooterSection";
 import ForensicPhysicsHUD from "@/components/ForensicPhysicsHUD";
+import VerificationConsole from "@/components/VerificationConsole";
 import HeroSection from "@/components/HeroSection";
 import HotspotVideoPlayer from "@/components/HotspotVideoPlayer";
 import MethodologySection from "@/components/MethodologySection";
@@ -138,7 +139,9 @@ export default function Home() {
           <SemanticSearch />
 
           {/* Solar Ephemeris & Shadow Coherence HUD */}
-          <ForensicPhysicsHUD />
+          <VerificationConsole />
+
+      <ForensicPhysicsHUD />
 
           {/* Rubric bullet 6: Cryptographic Provenance Panel */}
           <ProvenancePanel />
