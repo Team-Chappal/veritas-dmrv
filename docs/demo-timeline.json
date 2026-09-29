@@ -1,11 +1,11 @@
 {
-  "generated_utc": "2026-09-29T16:16:15.312Z",
+  "generated_utc": "2026-09-29T16:30:05.734Z",
   "viewport": {
     "width": 1280,
     "height": 720
   },
   "configuration": "backend absent (fixture mode), production build",
-  "walkthrough_seconds": 1.18,
+  "walkthrough_seconds": 1.2,
   "note": "Offsets into a scripted walkthrough at a fixed viewport on one machine, not a recording of a human presentation. Surface order and offsets are used to re-cut the 180 s pitch (7.7).",
   "surfaces": [
     {
@@ -30,25 +30,25 @@
       "bullet": "3",
       "surface": "impact-studio",
       "label": "Before / after split slider",
-      "offset_s": 0.68
+      "offset_s": 0.7
     },
     {
       "bullet": "4",
       "surface": "campaign-studio",
       "label": "Campaign studio",
-      "offset_s": 0.85
+      "offset_s": 0.87
     },
     {
       "bullet": "5",
       "surface": "semantic-search",
       "label": "Semantic search",
-      "offset_s": 1.02
+      "offset_s": 1.03
     },
     {
       "bullet": "6",
       "surface": "provenance-panel",
       "label": "Provenance panel",
-      "offset_s": 1.18
+      "offset_s": 1.2
     }
   ]
 }

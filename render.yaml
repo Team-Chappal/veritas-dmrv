@@ -1,0 +1,28 @@
+# Render deployment for the VERITAS backend — an alternative to fly.toml.
+# Same image, same environment variables, same CORS requirement.
+#
+# Deploy by connecting the repository in the Render dashboard, OR:
+#   render blueprint launch
+#
+# Note the healthCheckPath matches the one the Dockerfile already declares.
+services:
+  - type: web
+    name: veritas-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: starter            # 512 MB. The image is big; free spins down to 15 min
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "600"
+      # NOT OPTIONAL. Default is `*`, which deployed is an unauthenticated
+      # public API. The read routes carry no auth by design, so CORS is the only
+      # control on them.
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      # Secrets, set in the dashboard, never in this file:
+      #   CLOUDINARY_URL, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET,
+      #   CLOUDINARY_CLOUD_NAME

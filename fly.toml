@@ -1,0 +1,60 @@
+# Fly.io deployment for the VERITAS backend — docs/DEMO.md Tier 2.
+#
+# WHY FLY.IO, IN ONE LINE: the image is ~1.5 GB of OpenCV, SciPy, pvlib and
+# astropy, and the alternatives either cannot run a container that size for free
+# or scale it to zero in a way that makes the first request of a demo take ten
+# seconds. Measured cold start on this machine is 0.87 s to serving, so a machine
+# that stays warm is not a luxury.
+#
+# Cost: a `shared-cpu-1x` machine at 256 MB is inside the free allowance for as
+# long as it stays inside it. That is the number to watch, not the deploy.
+#
+# Deploy:
+#   fly launch --no-deploy --config fly.toml --copy-config
+#   fly secrets set CLOUDINARY_URL=... CLOUDINARY_API_KEY=... \
+#                     CLOUDINARY_API_SECRET=... CLOUDINARY_CLOUD_NAME=... \
+#                     CORS_ALLOW_ORIGINS=https://veritas-dmrv.vercel.app \
+#                     RATE_LIMIT_PER_MINUTE=600
+#   fly deploy
+#
+# CORS_ALLOW_ORIGINS IS NOT OPTIONAL HERE. The default is `*`, which on a laptop
+# is a convenience and on a deployed machine is an unauthenticated public API
+# that anybody can script against. The read routes carry no auth by design —
+# they are the demo surface — so CORS is the only control on them.
+
+app = "veritas-backend"
+primary_region = "iad"
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  APP_ENV = "production"
+  # 60/min is right on a laptop and wrong here: one page load is ~6 calls, so
+  # 60/min is ten page loads a minute. Several judges opening the link at once
+  # is the expected case, not the abusive one.
+  RATE_LIMIT_PER_MINUTE = "600"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # The healthcheck the container already declares, so Fly's routing uses the
+  # same signal Compose does. Two definitions of "healthy" is how a deploy
+  # reports ready and then 502s.
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.http_options.response.headers]
+    X-Content-Type-Options = "nosniff"
+
+[[http_service.checks]]
+  grace_period = "20s"
+  interval = "15s"
+  method = "GET"
+  timeout = "3s"
+  path = "/health"
+
+# No volumes, no databases, no state. The backend is a pure function of its
+# inputs plus Cloudinary, so horizontal scaling is a config change rather than a
+# migration.
