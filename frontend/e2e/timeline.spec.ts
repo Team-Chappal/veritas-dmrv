@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import { DEMO_SUMMARY, DEMO_TIMELINE } from "@/lib/project-fixture";
 

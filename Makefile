@@ -226,3 +226,11 @@ install-git-hooks:
 uninstall-git-hooks:
 	rm -f .git/hooks/pre-push
 	@echo "removed .git/hooks/pre-push"
+
+# Build the demo images locally without pushing. `docker compose build` does the
+# same thing; this exists so the image TAGS are visible without reading compose.
+.PHONY: demo-images
+demo-images:
+	docker build -f frontend/Dockerfile -t veritas-frontend:local .
+	docker build -f backend/Dockerfile -t veritas-backend:local .
+	@echo "veritas-frontend:local + veritas-backend:local built"
