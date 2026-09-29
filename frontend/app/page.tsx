@@ -17,6 +17,7 @@ import CampaignStudio from "@/components/CampaignStudio";
 import PortfolioGrid from "@/components/PortfolioGrid";
 import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
 import ForensicPhysicsHUD from "@/components/ForensicPhysicsHUD";
+import OfflineResilience from "@/components/OfflineResilience";
 import ProjectTimeline from "@/components/ProjectTimeline";
 import SemanticSearch from "@/components/SemanticSearch";
 import ProvenancePanel from "@/components/ProvenancePanel";
@@ -110,6 +111,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* Offline resilience: the queue, and the data mode as an explicit choice. */}
+      <OfflineResilience />
 
       {/* The shadow-coherence check, including the case it refuses to answer. */}
       <ForensicPhysicsHUD />
