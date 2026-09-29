@@ -177,6 +177,40 @@ does it on every tagged release. No clone, no build, no account.
 4. **Never promise an EUDR Article 9 dossier.** The validator is not implemented.
    The pitch says this explicitly, and `test_pitch_claims.py` enforces it.
 
+## What a judge actually does with it
+
+One box, near the top: **type a claim, get a verdict.** Latitude, longitude, the
+time a photograph claims, and the bearing its shadow points. Press *Verify*.
+
+It runs **entirely in the browser** — the deployed site has no backend, so the
+solar arithmetic is computed client-side with the NOAA algorithm, cross-checked
+against ten committed pvlib vectors to within **0.089° of azimuth and 0.007° of
+elevation**. Two independent implementations agreeing is the reason to believe a
+number shown to a judge.
+
+The output is a verdict, the geometry behind it, and an audit receipt. Three
+outcomes, all first-class:
+
+| Preset | What it shows |
+| :-- | :-- |
+| A genuine capture | Consistent — 2° off, inside the 12° tolerance |
+| A timestamp edited by six hours | The shadow is 173° from where it must be |
+| A case it refuses to judge | **The shadow reading is perfect (0.0° off) and the verdict is still withheld**, because at 5° of elevation a correct shadow is not evidence |
+
+That third one is the most valuable thing on the page. A verification tool that
+only answers yes or no invites the reading that it is accusing; this one declines
+to answer when answering would be a guess.
+
+The presets are the **committed pvlib vectors**, not numbers chosen to look good,
+so the console, the screenshot and the audit receipt cannot disagree.
+
+### What it deliberately does not claim
+
+The receipt's last line says it: *shadow coherence is one consistency check. A pass
+is not proof of authenticity.* It checks whether the light in the frame could have
+been cast the way the metadata says — nothing else. A "consistent" result is not a
+finding that a photograph is real.
+
 ## The honest state of the demo surface
 
 | Surface | Tier 1 (no backend) | Tier 2 (live) | Verified how |
