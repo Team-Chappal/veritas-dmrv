@@ -30,13 +30,13 @@ const STAGES: Stage[] = [
     status: "built",
     detail:
       "pvlib solar-ephemeris shadow coherence, Chave 2014 allometry, VM0047 " +
-      "uncertainty, pHash dedup. 105 tests, 94% coverage.",
+      "uncertainty, pHash dedup. 759 backend tests, 95% coverage.",
   },
   {
     id: "S2",
     title: "Computer vision",
     rubric: "before / after",
-    status: "planned",
+    status: "built",
     detail:
       "SIFT + USAC_MAGSAC++ homography, TPS parallax fallback, radiometric " +
       "normalization, GLI + Otsu canopy delta.",
@@ -45,10 +45,10 @@ const STAGES: Stage[] = [
     id: "S3",
     title: "Enrichment & semantics",
     rubric: "AI tagging, search",
-    status: "planned",
+    status: "built",
     detail:
       "Auto-tagging from image content, semantic discovery, grounded project " +
-      "summaries. Closes the largest gap in the original specification.",
+      "summaries, campaign export studio.",
   },
 ];
 

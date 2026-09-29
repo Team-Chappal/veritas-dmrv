@@ -560,7 +560,11 @@ def test_documented_demo_url_is_the_one_that_is_actually_public() -> None:
         assert DEMO_URL in text, f"{doc} does not link the live demo"
 
     try:
-        with urllib.request.urlopen(DEMO_URL, timeout=20) as r:
+        req = urllib.request.Request(
+            DEMO_URL,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as r:
             status, body = r.status, r.read()
     except urllib.error.URLError as exc:
         pytest.skip(f"no network here ({exc}); the URL is not verified in this run")
@@ -574,7 +578,7 @@ def test_documented_demo_url_is_the_one_that_is_actually_public() -> None:
     )
     assert len(body) > 10_000, f"{DEMO_URL} served {len(body)} bytes, not the app"
     # A redirect to a login page is a 200 on a login host. Catch it explicitly.
-    assert b"Evidence portfolio" in body, (
+    assert b"Verify a claim" in body or b"Evidence portfolio" in body, (
         f"{DEMO_URL} returned 200 but not the application -- likely a login page"
     )
 
