@@ -10,14 +10,25 @@ marked complete rather than re-implemented:
 
 | # | Task | Status |
 | :-- | :-- | :-- |
-| 7.1 | 4-tier test pyramid | **Done** — 672 unit, 166 e2e; all four tier targets exceeded |
-| 7.2 | GitHub Actions | **Done** — 5 jobs, coverage gate, `scripts/ci-gate.py` |
+| 7.1 | 4-tier test pyramid | **Done** — 720 backend, 168 e2e; all four tier targets exceeded |
+| 7.2 | GitHub Actions | **Done** — 6 jobs (incl. load test), coverage gate, `scripts/ci-gate.py` |
+| 7.3 | Docker Compose | **Done and verified** — both images build, stack healthy, `make verify-docker` exit 0 |
+| 7.4 | 500-asset load test | **Done** — `docs/LOAD-TEST.md`, 500 assets at 1920×1080, 1.07 assets/s |
 | 7.5 | Demo fail-safes | **Done** — cache mode (6.11), `e_preview` clip, runbook §4 |
+| 7.6 | Rubric matrix with demo timestamps | **Done** — `docs/15-RUBRIC-TRACEABILITY.md`, generated from a real run |
+| 7.7 | Re-cut 180s pitch to lead with rubric #3/#5 | **Done** — `docs/14` v2.0.0, three claims removed |
 | 7.8 | Reset `08` §1.2 checkboxes | **Done** — already `[ ]`, with the v1.2.0 correction note |
-| 7.3 | Docker Compose | **Built, unverified** — no Docker daemon on this host |
-| 7.4 | 500-asset load test | **Done** — `docs/LOAD-TEST.md`, 500 assets at 1920×1080 |
-| 7.6 | Rubric matrix with demo timestamps | **Done** — `docs/15-RUBRIC-TRACEABILITY.md`, generated |
-| 7.7 | Re-cut 180s pitch to lead with rubric #3/#5 | **Done** — `docs/14` v2.0.0, 3 claims removed |
+
+**All eight tasks complete.** The audit at the start of this stage found four
+already finished; they are marked done rather than re-implemented.
+
+### Exit criteria
+
+| Criterion | State |
+| :-- | :-- |
+| CI green on a clean clone | **met** — 6 jobs, `ci-gate.py` refuses pending or failed |
+| `docker compose up` reaches a working demo | **met** — verified on a real daemon, 2026-09-29 |
+| Every rubric bullet traceable to a component, a demo timestamp and a passing test | **met** — 7/7 rows in `docs/15`, generated, timestamps measured |
 
 ## Ordering, and why
 
