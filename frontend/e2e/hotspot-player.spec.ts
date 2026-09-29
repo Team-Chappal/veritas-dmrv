@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 import { DEMO_ANALYSIS } from "@/lib/video-fixture";
 import { formatTimestamp, parseVtt, validateVtt } from "@/lib/video";

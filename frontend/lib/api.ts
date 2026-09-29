@@ -47,6 +47,23 @@ const UNMEASURED = "No Cloudinary call was made.";
  * different facts and the panel should say which.
  */
 function apiBase(): string | null {
+  // RUNTIME OVERRIDE FIRST. NEXT_PUBLIC_* is inlined at build time, so a
+  // deployed build cannot be re-pointed at a different backend without a
+  // rebuild. That is a real operational limit: staging and production are the
+  // same artefact, and fixing a wrong backend URL means a new deploy.
+  //
+  // It is also what the live-path specs need, and it is worth being honest
+  // about that. Those specs mock the API by intercepting requests to
+  // localhost:8000, and they worked ONLY because apiBase invented that default
+  // when the variable was unset. Removing the default -- which was correct for a
+  // judge-facing build -- silently took the live path out of coverage AND broke
+  // four specs, which is how it was found. Both facts belong in this comment:
+  // the override exists for operators, and the test suite depends on it.
+  if (typeof window !== "undefined") {
+    const runtime = (window as unknown as { __VERITAS_API_URL__?: string })
+      .__VERITAS_API_URL__;
+    if (runtime && runtime.length > 0) return runtime;
+  }
   const configured = process.env.NEXT_PUBLIC_API_URL;
   return configured && configured.length > 0 ? configured : null;
 }

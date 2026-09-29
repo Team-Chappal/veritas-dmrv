@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 /**
  * S6 exit criterion 5: the demo works with the backend entirely absent.

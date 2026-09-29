@@ -23,6 +23,11 @@ npx vercel --prod          # or: vercel link && vercel --prod
 
 - **Set no `NEXT_PUBLIC_API_URL`.** An unset API is a supported first-class
   state; the page makes **no network requests at all** and says so.
+- **To re-point a deployed build at a different backend, set
+  `window.__VERITAS_API_URL__` before the bundle runs** (a one-line inline
+  script). `NEXT_PUBLIC_*` is inlined at build time, so without this a wrong
+  backend URL means a new deploy. Tier 1 and Tier 2 are then the same artefact
+  with one value changed, which is why a demo and a deployment do not drift.
 - **What it proves:** rubric bullets 1, 2, 3, 5, 6 and the intro timeline, all
   interactive.
 - **What it does not prove:** any Cloudinary call. The transformations are real

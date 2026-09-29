@@ -18,6 +18,12 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
+
+  // The e2e build is built WITHOUT NEXT_PUBLIC_API_URL, so it is the same
+  // artefact a judge-facing deploy gets. Specs that need to exercise the live
+  // path opt into a runtime URL override via `./e2e/fixtures`, and
+  // `demo-build.spec.ts` deliberately does not, so the no-API state stays
+  // covered too. See that file for the full story.
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
