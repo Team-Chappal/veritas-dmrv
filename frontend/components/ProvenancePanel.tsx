@@ -50,7 +50,7 @@ export default function ProvenancePanel() {
   if (failed) {
     return (
       <Panel id="provenance-heading" title="Provenance">
-        <p className="mt-3 text-slate-300">
+        <p className="mt-3 text-slate-600 dark:text-slate-300">
           The provenance record could not be read. This is a client error, not a
           verification result: nothing is being claimed about the asset.
         </p>
@@ -63,12 +63,12 @@ export default function ProvenancePanel() {
       <div
         aria-busy="true"
         aria-labelledby="provenance-heading"
-        className="rounded-lg border border-slate-700 bg-surface p-6"
+        className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-surface p-6 sm:p-8 shadow-sm"
       >
-        <h2 id="provenance-heading" className="text-lg font-semibold">
+        <h2 id="provenance-heading" className="text-xl font-bold text-slate-900 dark:text-white">
           Provenance
         </h2>
-        <p className="mt-2 text-slate-400">Reading provenance record…</p>
+        <p className="mt-2 text-slate-500 dark:text-slate-400">Reading provenance record…</p>
       </div>
     );
   }
@@ -106,7 +106,7 @@ export default function ProvenancePanel() {
           testId="provenance-root-hash"
         />
         <div>
-          <dt className="text-sm uppercase tracking-wide text-slate-400">
+          <dt className="text-xs uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-semibold">
             C2PA manifest
           </dt>
           <dd className="mt-1">
@@ -115,28 +115,28 @@ export default function ProvenancePanel() {
         </div>
       </dl>
 
-      <h3 className="mt-6 text-sm uppercase tracking-wide text-slate-400">
+      <h3 className="mt-6 text-xs uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 font-semibold">
         Transformation chain
       </h3>
       {record.transformations.length === 0 ? (
-        <p className="mt-2 text-slate-400" data-testid="provenance-empty">
+        <p className="mt-2 text-slate-500 dark:text-slate-400" data-testid="provenance-empty">
           No transformations recorded for this asset.
         </p>
       ) : (
-        <ol className="mt-2 space-y-2" data-testid="provenance-chain">
+        <ol className="mt-2.5 space-y-2" data-testid="provenance-chain">
           {record.transformations.map((step, i) => (
             <li
               key={`${step.transformation ?? i}-${i}`}
-              className="rounded border border-slate-800 bg-canvas p-3"
+              className="rounded-xl border border-slate-200/90 dark:border-slate-800 bg-slate-50 dark:bg-canvas p-3.5 shadow-2xs"
             >
               <div className="flex items-baseline gap-3">
-                <span className="tabular-nums text-slate-500">#{i + 1}</span>
-                <code className="break-all text-sm tabular-nums">
+                <span className="tabular-nums font-mono text-xs text-slate-500 font-bold">#{i + 1}</span>
+                <code className="break-all font-mono text-xs sm:text-sm tabular-nums text-slate-800 dark:text-slate-200">
                   {step.transformation ?? "(transformation string unavailable)"}
                 </code>
               </div>
               {(step.width || step.height || step.bytes || step.format) && (
-                <p className="mt-1 pl-8 text-sm tabular-nums text-slate-400">
+                <p className="mt-1 pl-7 font-mono text-xs tabular-nums text-slate-500 dark:text-slate-400">
                   {step.width && step.height
                     ? `${step.width}×${step.height}`
                     : null}
@@ -149,7 +149,7 @@ export default function ProvenancePanel() {
         </ol>
       )}
 
-      <p className="mt-5 text-sm text-slate-400">
+      <p className="mt-5 text-xs sm:text-sm text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-3">
         {record.note}
         {record.transformation_log_live
           ? " Chain read from the Cloudinary API."

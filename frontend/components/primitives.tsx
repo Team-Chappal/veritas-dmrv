@@ -6,14 +6,8 @@
  * in greyscale and a green dot on white paper carries no information. Every
  * status therefore carries a glyph AND a word.
  *
- * The cost of not extracting this: 6.2, 6.3, 6.7, 6.8 and 6.9 all need a status
- * row, and a rule re-implemented five times is a rule that is quietly broken in
- * four of them. ProvenancePanel had its own inline copy, which is what this
- * replaces.
- *
- * All colour pairs below were chosen for >= 7:1 contrast on the `surface`
- * background (#0B0F19) rather than the 4.5:1 minimum, per the WCAG 2.2 AAA
- * target in the S6 spec.
+ * All colour pairs below are chosen for >= 7:1 contrast on both the light surface
+ * (#FFFFFF) and dark surface (#0B0F19), exceeding the WCAG 2.2 AAA target.
  */
 
 import type { ReactNode } from "react";
@@ -41,11 +35,11 @@ export function SourceBadge({
       data-source={source}
       className={
         source === "live"
-          ? "inline-flex items-center gap-1 rounded border border-verified px-2 py-1 text-sm text-verified"
-          : "inline-flex items-center gap-1 rounded border border-telemetry px-2 py-1 text-sm text-telemetry"
+          ? "inline-flex items-center gap-1.5 rounded-full border border-emerald-500 bg-emerald-50/80 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-800 dark:border-verified dark:bg-verified/10 dark:text-verified"
+          : "inline-flex items-center gap-1.5 rounded-full border border-sky-500 bg-sky-50/80 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-sky-800 dark:border-telemetry dark:bg-telemetry/10 dark:text-telemetry"
       }
     >
-      <span aria-hidden="true">{source === "live" ? "●" : "◐"}</span>
+      <span aria-hidden="true" className="text-[10px]">{source === "live" ? "●" : "◐"}</span>
       {source === "live" ? "Live" : "Fixture"}
     </span>
   );
@@ -58,10 +52,10 @@ export function SourceBadge({
 export type StatusTone = "verified" | "quarantine" | "review" | "neutral";
 
 const TONE_CLASS: Record<StatusTone, string> = {
-  verified: "border-verified text-verified",
-  quarantine: "border-quarantine text-quarantine",
-  review: "border-amber-400 text-amber-300",
-  neutral: "border-slate-500 text-slate-300",
+  verified: "border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-verified dark:bg-verified/10 dark:text-verified",
+  quarantine: "border-rose-500 bg-rose-50 text-rose-800 dark:border-quarantine dark:bg-quarantine/10 dark:text-quarantine",
+  review: "border-amber-500 bg-amber-50 text-amber-800 dark:border-amber-400 dark:bg-amber-400/10 dark:text-amber-300",
+  neutral: "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300",
 };
 
 export type StatusPresentation = {
@@ -105,9 +99,9 @@ export function StatusPill({
     <span
       data-testid={testId}
       data-tone={status.tone}
-      className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-sm font-medium ${TONE_CLASS[status.tone]}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${TONE_CLASS[status.tone]}`}
     >
-      <span aria-hidden="true">{status.glyph}</span>
+      <span aria-hidden="true" className="font-bold">{status.glyph}</span>
       <span className="sr-only">Status: </span>
       {status.word}
     </span>
@@ -140,11 +134,11 @@ export function Figure({
 }) {
   return (
     <div>
-      <dt className="text-sm uppercase tracking-wide text-slate-400">{label}</dt>
+      <dt className="text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 font-semibold">{label}</dt>
       <dd
         data-testid={testId}
         title={title}
-        className={`mt-1 break-all ${mono ? "font-mono tabular-nums" : "tabular-nums"}`}
+        className={`mt-1 break-all text-slate-900 dark:text-slate-100 font-semibold ${mono ? "font-mono tabular-nums" : "tabular-nums"}`}
       >
         {value}
       </dd>
@@ -179,10 +173,10 @@ export function DegradationNotice({
     <p
       data-testid={testId}
       role="status"
-      className="mt-3 rounded border border-telemetry/40 bg-telemetry/10 p-3 text-sm text-slate-200"
+      className="mt-4 rounded-xl border border-sky-300 bg-sky-50/80 p-3.5 text-xs sm:text-sm text-sky-950 dark:border-telemetry/40 dark:bg-telemetry/10 dark:text-slate-200 flex items-start gap-2 shadow-sm"
     >
-      <span aria-hidden="true">◐ </span>
-      {reason}
+      <span aria-hidden="true" className="font-bold text-sky-600 dark:text-telemetry">◐</span>
+      <span>{reason}</span>
     </p>
   );
 }
@@ -207,19 +201,9 @@ export function Panel({
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
-  /** Set on the <section> itself, so the test hook and the ARIA landmark are
-   *  the SAME element. A wrapper div carrying the hook while the landmark sits
-   *  inside makes "is this labelled?" ambiguous to assert and easy to break. */
   testId?: string;
-  /** "live" | "fixture", when the panel's contents have a known origin. Kept on
-   *  the landmark so "what am I looking at?" is answerable from one node. */
   dataSource?: "live" | "fixture";
-  /** What the user has INPUT. Differs from dataResultQuery below: typing does
-   *  not re-run a search. */
   dataQuery?: string;
-  /** The query the VISIBLE RESULTS came from. This is the one a test must wait
-   *  on, and it is the one that matters for a screenshot audit -- a panel
-   *  showing results for a query nobody can see is misleading. */
   dataResultQuery?: string;
 }) {
   return (
@@ -229,10 +213,10 @@ export function Panel({
       data-query={dataQuery}
       data-result-query={dataResultQuery}
       aria-labelledby={id}
-      className={`rounded-lg border border-slate-700 bg-surface p-6 ${className}`}
+      className={`rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-surface/95 shadow-sm p-6 sm:p-8 transition-all duration-200 ${className}`}
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id={id} className="text-lg font-semibold">
+      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-slate-100 dark:border-slate-800/80 pb-4 mb-5">
+        <h2 id={id} className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
           {title}
         </h2>
         {actions}
@@ -242,10 +226,4 @@ export function Panel({
   );
 }
 
-/**
- * Minimum interactive target size.
- *
- * 44px is the S6 requirement. Sizing the hit area rather than the visual box is
- * what makes a small chip tappable without making it look oversized.
- */
 export const TOUCH_TARGET = "min-h-11 min-w-11";

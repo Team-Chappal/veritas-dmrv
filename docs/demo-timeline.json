@@ -1,54 +1,54 @@
 {
-  "generated_utc": "2026-09-29T16:30:05.734Z",
+  "generated_utc": "2026-09-29T17:13:19.529Z",
   "viewport": {
     "width": 1280,
     "height": 720
   },
   "configuration": "backend absent (fixture mode), production build",
-  "walkthrough_seconds": 1.2,
+  "walkthrough_seconds": 1.27,
   "note": "Offsets into a scripted walkthrough at a fixed viewport on one machine, not a recording of a human presentation. Surface order and offsets are used to re-cut the 180 s pitch (7.7).",
   "surfaces": [
     {
       "bullet": "intro",
       "surface": "project-timeline",
       "label": "Timeline",
-      "offset_s": 0.18
+      "offset_s": 0.2
     },
     {
       "bullet": "1",
       "surface": "portfolio-grid",
       "label": "Portfolio grid",
-      "offset_s": 0.35
+      "offset_s": 0.39
     },
     {
       "bullet": "2",
       "surface": "hotspot-player",
       "label": "Hotspot video + auto-tags",
-      "offset_s": 0.52
+      "offset_s": 0.55
     },
     {
       "bullet": "3",
       "surface": "impact-studio",
       "label": "Before / after split slider",
-      "offset_s": 0.7
+      "offset_s": 0.72
     },
     {
       "bullet": "4",
       "surface": "campaign-studio",
       "label": "Campaign studio",
-      "offset_s": 0.87
+      "offset_s": 0.89
     },
     {
       "bullet": "5",
       "surface": "semantic-search",
       "label": "Semantic search",
-      "offset_s": 1.03
+      "offset_s": 1.06
     },
     {
       "bullet": "6",
       "surface": "provenance-panel",
       "label": "Provenance panel",
-      "offset_s": 1.2
+      "offset_s": 1.27
     }
   ]
 }
