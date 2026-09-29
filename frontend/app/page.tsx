@@ -17,6 +17,7 @@ import CampaignStudio from "@/components/CampaignStudio";
 import PortfolioGrid from "@/components/PortfolioGrid";
 import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
 import ForensicPhysicsHUD from "@/components/ForensicPhysicsHUD";
+import HotspotVideoPlayer from "@/components/HotspotVideoPlayer";
 import MetricTicker from "@/components/MetricTicker";
 import OfflineResilience from "@/components/OfflineResilience";
 import ProjectTimeline from "@/components/ProjectTimeline";
@@ -112,6 +113,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* The hotspot video player: real <track> captions, clickable markers. */}
+      <HotspotVideoPlayer />
 
       {/* Live figures that change without moving anything (CLS == 0). */}
       <MetricTicker />
