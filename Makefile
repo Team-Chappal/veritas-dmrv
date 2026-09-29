@@ -234,3 +234,19 @@ demo-images:
 	docker build -f frontend/Dockerfile -t veritas-frontend:local .
 	docker build -f backend/Dockerfile -t veritas-backend:local .
 	@echo "veritas-frontend:local + veritas-backend:local built"
+
+# S7 -- a judge-facing demo that is a FOLDER OF FILES.
+#
+# The app is already fully static, so this emits ~1.1 MB that serves from any
+# static host, or from `python3 -m http.server` on a machine with no Node.
+#
+# One config, not two. `next build` has no --config flag, and Next 15's
+# programmatic API does not expose build(), so an alternate config file is not
+# reachable. The env var selects the branch inside next.config.mjs; production is
+# unaffected because it is unset there.
+demo-export: ## Build the static demo bundle into frontend/out
+	cd frontend && VERITAS_STATIC_DEMO=1 npx next build
+	@echo ""
+	@echo "frontend/out/ is a static bundle. Serve it with anything:"
+	@echo "  cd frontend/out && python3 -m http.server 3200"
+	@echo "  # then open http://localhost:3200"

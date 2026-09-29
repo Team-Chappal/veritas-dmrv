@@ -483,3 +483,30 @@ def test_demo_doc_states_what_each_tier_does_not_prove() -> None:
     )
     for tier in ("Tier 1", "Tier 2", "Tier 3"):
         assert tier in text, f"{tier} is undocumented"
+
+
+def test_static_demo_export_is_opt_in_only() -> None:
+    """The static export must not reconfigure production.
+
+    It is a demo affordance, so the risk is that it changes what the Docker
+    image or Vercel serve. Two earlier approaches were abandoned -- a second
+    config file, which `next build` cannot select, and the programmatic API,
+    which does not expose build() -- and the shell alternative would have left
+    the export config in place if a build were interrupted. So the export is a
+    branch inside the one config, selected by an env var that production does
+    not set.
+    """
+    cfg = (REPO / "frontend" / "next.config.mjs").read_text()
+    assert "VERITAS_STATIC_DEMO" in cfg, "the static export is not env-gated"
+    # The gate must be an equality check against "1", not a truthiness check on
+    # the variable's mere presence: a stray empty value must not enable the
+    # export, or an unset-but-declared variable would silently ship a static
+    # bundle to the container.
+    assert 'VERITAS_STATIC_DEMO === "1"' in cfg, (
+        "the export gate is not an explicit ==1 check; a truthiness check would "
+        "enable the export whenever the variable is merely present"
+    )
+    # And no alternate config file, because it could not be selected anyway.
+    assert not (REPO / "frontend" / "next.export.config.mjs").exists(), (
+        "an alternate config file exists but `next build` cannot select it"
+    )

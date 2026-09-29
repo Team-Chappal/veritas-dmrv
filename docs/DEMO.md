@@ -8,6 +8,32 @@ Read `DEMO-VERIFICATION.md` for what each tier actually proves. The short versio
 `docker compose up` is verified, and it is the right *exit criterion* — but it is
 not a *demo*, because a judge with 30 seconds and a USB port will not run it.
 
+## Tier 0 — a folder of files (no server, no host, no Node)
+
+The single most robust option, and the one to reach for when the network is the
+thing you do not trust.
+
+The app is **already fully static** — `next build` reports *"prerendered as
+static content"*. So it can be exported to a directory that serves from
+anything:
+
+```bash
+make demo-export
+cd frontend/out && python3 -m http.server 3200
+# http://localhost:3200  — 1.1 MB, no Node required to SERVE it
+```
+
+Upload `frontend/out/` to any static host, or hand a judge the folder and a
+`python3 -m http.server` command. Verified on 2026-09-29: index, service worker
+and manifest all serve 200 from a plain file server, and no `localhost:8000`
+appears anywhere in the bundle.
+
+Production is untouched — the export is opt-in via `VERITAS_STATIC_DEMO=1`
+inside `next.config.mjs`. Two earlier approaches were abandoned and are recorded
+in that file: `next build` has no `--config` flag, and Next 15's programmatic API
+does not expose `build()`. Neither is worth a second config file that can drift
+from the first.
+
 ## The three tiers
 
 ### Tier 1 — Public URL, no backend (what a judge clicks)
