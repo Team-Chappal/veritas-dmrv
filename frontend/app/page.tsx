@@ -17,6 +17,7 @@ import CampaignStudio from "@/components/CampaignStudio";
 import PortfolioGrid from "@/components/PortfolioGrid";
 import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
 import ForensicPhysicsHUD from "@/components/ForensicPhysicsHUD";
+import MetricTicker from "@/components/MetricTicker";
 import OfflineResilience from "@/components/OfflineResilience";
 import ProjectTimeline from "@/components/ProjectTimeline";
 import SemanticSearch from "@/components/SemanticSearch";
@@ -111,6 +112,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* Live figures that change without moving anything (CLS == 0). */}
+      <MetricTicker />
 
       {/* Offline resilience: the queue, and the data mode as an explicit choice. */}
       <OfflineResilience />
