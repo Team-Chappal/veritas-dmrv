@@ -120,13 +120,19 @@ def make_probe_image(width: int = 640, height: int = 480) -> bytes:
     return buf.tobytes()
 
 
-def make_probe_video() -> Optional[bytes]:
+def make_probe_video(seconds: int = 2) -> Optional[bytes]:
     """A real, tiny MP4, generated locally with ffmpeg.
 
     The 9:16 donor reel is the one campaign URL that cannot be checked with a
     still image: a `/video/upload/` delivery against an image asset 404s, and
     reporting that as a builder defect would be wrong. ffmpeg is optional, so
     this returns None rather than failing when it is absent.
+
+    ``seconds`` exists because a preview check needs a clip LONGER than the
+    preview window. Against the default 2-second probe, an ``e_preview:duration_10``
+    was measured LARGER than the untruncated reel -- which says nothing about the
+    transformation, only that you cannot take ten seconds out of two. The fail-safe
+    is for a long drone transect, so the probe has to be long too.
     """
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -134,8 +140,8 @@ def make_probe_video() -> Optional[bytes]:
     out = Path(tempfile.mkdtemp(prefix="veritas-video-")) / "probe.mp4"
     cmd = [
         ffmpeg, "-v", "error",
-        "-f", "lavfi", "-i", "testsrc=size=320x180:rate=10:duration=2",
-        "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+        "-f", "lavfi", "-i", f"testsrc=size=320x180:rate=10:duration={seconds}",
+        "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
         "-shortest", "-y", str(out),
     ]
@@ -225,6 +231,138 @@ def reel_url_or_none(cloud: str, stamp: str, report: "Report",
         report.skip("donor_reel URL renders", f"video probe upload failed: {exc}")
         return None
     return build_donor_reel_url(cloud, f"veritas_validation/probe_video_{stamp}")
+
+
+def probe_video_public_id(
+    stamp: str,
+    metadata: dict,
+    report: "Report",
+    name: str,
+    seconds: int = 2,
+) -> Optional[str]:
+    """Upload a short probe video and return its public_id.
+
+    ``metadata`` is not optional. The account's schema marks
+    ``capture_timestamp`` mandatory, and an upload without it is REJECTED -- the
+    first version of this helper passed none and the whole harness died on a
+    Cloudinary error rather than reporting a failed check. A check that takes the
+    run down with it is not a check.
+    """
+    import cloudinary.uploader
+
+    payload = make_probe_video(seconds)
+    if payload is None:
+        return None
+    try:
+        out = cloudinary.uploader.upload(
+            io.BytesIO(payload),
+            public_id=f"{name}_{stamp}",
+            resource_type="video",
+            overwrite=True,
+            metadata=metadata,
+        )
+    except Exception as exc:
+        report.add(
+            f"{name} probe uploaded",
+            False,
+            f"{type(exc).__name__}: {exc}",
+        )
+        return None
+    return out.get("public_id")
+
+
+def check_preview_reel(
+    cloud: str, stamp: str, report: "Report", metadata: dict
+) -> None:
+    """LOAD an e_preview donor reel, rather than assert its URL shape.
+
+    S7.5 promises a fail-safe in runbook section 4: if the drone video streams
+    badly on stage, switch to ``e_preview:duration_10``. That promise had a unit
+    test asserting the URL CONTAINS the string and nothing that ever FETCHED it,
+    which is the same class of error as a latency number attributed to the wrong
+    stage -- a transformation that looks right in a string and 404s in a browser
+    is a fail-safe that fails exactly when it is needed.
+
+    A preview is only useful if it is also SMALLER, so the byte size is compared
+    against the same reel without the slice. A preview that streams the whole
+    clip has not solved anything.
+    """
+    from core.cloudinary_client import build_donor_reel_url
+
+    # 60s of 320x180 is a couple of hundred KB and generates in about a second,
+    # and it is longer than any preview window we ask for. Against a 2s probe
+    # the comparison was meaningless, not merely tight.
+    public_id = probe_video_public_id(
+        stamp, metadata, report, "e_preview_probe", seconds=60
+    )
+    if public_id is None:
+        report.skip(
+            "e_preview donor reel LOADS",
+            "ffmpeg is not installed, so no video probe could be produced. A "
+            "/video/upload/ delivery cannot be checked against a still image.",
+        )
+        return
+
+    full = build_donor_reel_url(cloud, public_id, preview_seconds=0)
+    preview = build_donor_reel_url(cloud, public_id, preview_seconds=10)
+
+    full_status, _, full_size, full_msg = http_status(full, timeout=40)
+    prev_status, _, prev_size, prev_msg = http_status(preview, timeout=40)
+
+    # 423 IS "not ready yet", not "malformed". e_preview is a summarisation
+    # Cloudinary builds in the BACKGROUND, so a cold asset answers
+    # "Video summarization is processing" on the first request. Reporting that
+    # as a failure would be wrong in the same way as reporting a queued
+    # video tracking-crop as a builder defect -- so retry, and only fail if it
+    # never becomes ready.
+    #
+    # The first run of this check failed here, on a URL that is perfectly valid.
+    attempts = 1
+    while prev_status == 423 and attempts < 6:
+        time.sleep(12)
+        prev_status, _, prev_size, prev_msg = http_status(preview, timeout=40)
+        attempts += 1
+
+    if prev_status == 423:
+        report.add(
+            "e_preview donor reel LOADS",
+            False,
+            f"still 423 after {attempts} attempts over ~{attempts * 12}s "
+            f"({prev_msg}). A 60-second summarisation should not take this long, "
+            "so this is worth a look rather than a retry.",
+        )
+        return
+
+    if prev_status != 200 or prev_size <= 0:
+        report.add(
+            "e_preview donor reel LOADS",
+            False,
+            f"HTTP {prev_status} {prev_size}B for the preview URL after "
+        f"{attempts} attempt(s) ({prev_msg}). "
+            f"Runbook section 4 promises this as a stage fail-safe, so a URL that "
+            "does not load is a fail-safe that fails when it is needed.",
+        )
+        return
+
+    # A preview that is not smaller has not solved the problem it exists for.
+    # Runbook section 4 promises an "ultra-fast, lightweight" clip "instead of
+    # buffering the full transect"; if the bytes do not drop, the promise is
+    # false and a presenter would be buffering MORE on stage, not less.
+    smaller = prev_size < full_size
+    ratio = (prev_size / full_size) if full_size else float("inf")
+    report.add(
+        "e_preview donor reel is SMALLER than the full reel",
+        smaller,
+        f"preview {prev_status} {prev_size}B (after {attempts} attempt(s)) vs "
+        f"full {full_status} {full_size}B"
+        + (f" ({ratio:.2f}x)" if full_size else "")
+        + (
+            ""
+            if smaller
+            else " -- NOT smaller, so this would not save the stream it promises "
+            "to save. The runbook claim is false as written."
+        ),
+    )
 
 
 def provision_brand_assets(report: "Report") -> None:
@@ -466,6 +604,9 @@ def main() -> int:
             cloud, warped, "VAL-001", "Validation", 8.42, 9.4, "a" * 64
         ),
     }
+    # The runbook's e_preview fail-safe, loaded rather than asserted.
+    check_preview_reel(cloud, stamp, report, upload_metadata)
+
     for name, url in urls.items():
         if url is None:
             # Already reported with a specific reason by its builder helper.

@@ -113,12 +113,42 @@ concurrency (`RATE_LIMIT_PER_MINUTE=60` would bind long before throughput did,
 so reporting that as throughput would be measuring the limiter), and
 registration cost on photographic rather than synthetic imagery.
 
-## Carried forward — an unverified claim
+## The `e_preview` fail-safe — CLOSED, and it was BROKEN
 
-Runbook §4 promises an `e_preview:duration_10` fail-safe for slow drone video.
-Nothing in the suite loads one. Per the evidence standard in `AGENTS.md` §2, a
-promised path that is never exercised is a liability, so it gets folded into
-`scripts/validate_cloudinary_live.py`: verified, or removed from the runbook.
+Runbook §4 promised an `e_preview:duration_10` fail-safe with nothing loading
+one. Closing it found a real defect immediately:
+
+```
+400  e_preview must be the first transformation
+```
+
+`build_donor_reel_url` inserted the slice at index 1, after `ar_9:16,c_fill,
+g_center`. The URL was **invalid**, and the unit test was green because it
+asserted only that the string `e_preview:duration_10:max_seg_3` was *present* —
+which the broken URL satisfies exactly as well as the working one. **A runbook
+fail-safe that 400s is worse than none, because it is trusted.**
+
+This is the same failure as every other transformation bug in this project: a
+test asserting the *shape* of a URL, which `AGENTS.md` has warned about since
+"a URL that a test asserts the shape of is not a URL anyone has loaded".
+
+**Now verified live.** Preview **134,315 B** vs full **806,958 B** — **0.17×**, a
+six-fold reduction — and the harness retries, because `e_preview` summarisation
+is built asynchronously and a cold asset answers **423 (processing)**, which is
+not a malformed URL.
+
+Three further corrections came out of writing the check:
+
+1. **The first comparison was meaningless.** Against the harness's 2-second probe,
+   a `duration_10` preview is *larger* than the untruncated reel — you cannot
+   take ten seconds out of two. The preview check now uses a 60-second probe,
+   which is what the fail-safe is actually for.
+2. **Size is now a hard criterion**, not a note. A preview that is not smaller
+   has not solved the problem it exists for, and the runbook's "ultra-fast,
+   lightweight" claim is false as written.
+3. **My own helper crashed the harness** instead of reporting a failed check,
+   because it uploaded without the account's mandatory metadata. A check that
+   takes the run down with it is not a check.
 
 ## Load test shape (7.4)
 
