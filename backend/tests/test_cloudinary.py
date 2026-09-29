@@ -47,6 +47,18 @@ def decoded(url: str) -> str:
     return urllib.parse.unquote(url)
 
 
+def transform_components(url: str) -> list[str]:
+    """The transformation components of a delivery URL, in order.
+
+    Splitting the WHOLE url on "/" gives ``https:`` as the first element, which
+    is how the first attempt at the position assertion reported ``e_preview`` at
+    position 4 for a URL where it was at position 0. The transformation chain is
+    what this is about, so take the chain.
+    """
+    path = urllib.parse.unquote(url).split("/upload/", 1)[-1]
+    return [c for c in path.split("/")[:-1]]  # drop the trailing asset name
+
+
 # =========================================================================== #
 # Public ID validation
 # =========================================================================== #
@@ -163,6 +175,41 @@ class TestUrlEngine:
             CLOUD, "drones/x", preview_seconds=10
         ))
         assert "e_preview:duration_10:max_seg_3" in d
+
+    def test_e_preview_is_the_FIRST_transformation(self):
+        """Cloudinary rejects it anywhere else, and the test that only checked
+        for its PRESENCE stayed green while the URL was a 400.
+
+        Live error, verbatim:
+
+            400  e_preview must be the first transformation
+
+        The old assertion was `"e_preview:duration_10:max_seg_3" in d`, which is
+        satisfied by the broken URL exactly as it is by the working one. Position
+        is the whole requirement, so position is what is asserted.
+
+        Still a shape assertion -- the load check lives in
+        scripts/validate_cloudinary_live.py, which is the only thing here that
+        fetches a URL.
+        """
+        components = transform_components(
+            build_donor_reel_url(CLOUD, "drones/x", preview_seconds=10)
+        )
+        preview_at = [c for c, p in enumerate(components) if p.startswith("e_preview")]
+        assert preview_at, f"no e_preview component in {components}"
+        assert preview_at[0] == 0, (
+            f"e_preview is at position {preview_at[0]}, not 0: {components}. "
+            "Cloudinary returns 400 -- 'e_preview must be the first transformation'."
+        )
+
+    def test_without_preview_the_first_component_is_the_aspect_ratio(self):
+        """The reordering must not have moved anything else."""
+        components = transform_components(
+            build_donor_reel_url(CLOUD, "drones/x")
+        )
+        assert components[0].startswith("ar_9:16"), (
+            f"first component is {components[0]!r}, expected the aspect ratio"
+        )
 
     def test_donor_reel_without_preview_has_no_slice(self):
         d = decoded(build_donor_reel_url(CLOUD, "drones/x"))

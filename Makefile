@@ -131,6 +131,7 @@ sync-usb: ## Mirror source to the FAT32 USB volume (excludes heavy dirs)
 		--exclude '.venv' --exclude 'node_modules' --exclude '.next' \
 		--exclude '__pycache__' --exclude '.git' --exclude '.pytest_cache' \
 		--exclude '.DS_Store' --exclude '._*' \
+		--exclude '.env' --exclude 'backend/.env' --exclude '*.pem' --exclude '*.key' \
 		./ /Volumes/VENTOY/cc/
 	@echo "Synced to /Volumes/VENTOY/cc (note: FAT32 is case-insensitive and ~176x slower)."
 

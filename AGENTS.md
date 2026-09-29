@@ -76,9 +76,14 @@ rather than quietly fixing it.
   and it found six real defects in the transformation grammar that the unit tests
   were green about. Re-run it after touching `core/cloudinary_client.py`; a URL
   that a test asserts the shape of is not a URL anyone has loaded.
-- Develop on the local APFS repo, not the USB volume at `/Volumes/VENTOY` — it
-  is FAT32, case-insensitive and slow, and tests crawl there. `make sync-usb`
-  mirrors when the volume is mounted.
+- Develop on the local APFS repo at `~/veritas-dmrv`. **That tree and GitHub are
+  the only things that matter.** `~/Desktop/cc` is a portable mirror;
+  `/Volumes/VENTOY/cc` is a convenience mirror on removable FAT32 media, and it
+  is frequently not connected.
+- Neither mirror is part of any build. `make sync-usb` and `make sync-desktop`
+  are optional and exit cleanly when their target is absent — a target that fails
+  when a drive is unplugged is a target that trains you to ignore its failures.
+  Anything that matters belongs in a commit, not on removable media.
 - Frontend: `make fe-build` (npm ci + production build + typecheck) and
   `make e2e` (Playwright against a production build, backend not required).
   `frontend/package-lock.json` is committed, so `npm ci` is what runs.

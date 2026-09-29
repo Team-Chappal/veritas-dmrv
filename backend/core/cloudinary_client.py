@@ -582,12 +582,25 @@ def build_donor_reel_url(
         _safe_text(value, label)
 
     _safe_component(f"g_{gravity}", "gravity")
-    components = [
+    # e_preview MUST BE THE FIRST TRANSFORMATION. Verified live, and it is the
+    # reason this check existed at all: inserting the preview slice at index 1 --
+    # after ar_9:16,c_fill,g_center -- produced
+    #
+    #     400  e_preview must be the first transformation
+    #
+    # while the unit test stayed green, because it asserted only that the URL
+    # CONTAINED "e_preview:duration_10:max_seg_3". A string containing a
+    # transformation is not a URL that works, and a runbook fail-safe that 400s
+    # is worse than no fail-safe, because it is trusted.
+    #
+    # So the rule is a code comment AND a test that loads the URL.
+    components = []
+    if preview_seconds and preview_seconds > 0:
+        components.append(f"e_preview:duration_{preview_seconds}:max_seg_3")
+    components += [
         f"ar_9:16,c_fill,g_{gravity}",
         "e_sharpen:60",
     ]
-    if preview_seconds and preview_seconds > 0:
-        components.insert(1, f"e_preview:duration_{preview_seconds}:max_seg_3")
     components += [
         _text_layer(headline, font=_font("34_black"), style="co_white,b_rgb:059669",
                     gravity="north", x=0, y=80),
