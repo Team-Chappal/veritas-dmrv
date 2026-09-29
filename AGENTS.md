@@ -20,6 +20,29 @@ gh pr create --base main --title "..." --body "..."
 ./scripts/ci-gate.py <n> && gh pr merge <n> --squash --delete-branch
 ```
 
+**EVERY commit goes through a PR, without exception.** Merge it yourself once CI
+is green; never push to `main` directly.
+
+This is a rule, and a rule was not enough — it was already written here and did
+not prevent it twice. Both times were a `git push` with no refspec, written into
+a command chain, run while `HEAD` was already on `main`: commits `d26b589` and
+`dc26c66` reached `main` with no PR and no CI. `ci-gate.py` protected every
+merge and saw neither, because those were **pushes**, and a merge gate has
+nothing to merge.
+
+So the rule now has teeth in front of the push:
+
+```
+make install-git-hooks   # once per clone
+```
+
+`.git/hooks/pre-push` refuses to push a commit to `main` that carries no merged
+PR reference, and `scripts/check_main_provenance.py` runs in CI on every push to
+`main` so the commit is visible even if the hook was bypassed. The hook has a
+deliberate escape hatch — `git push --no-verify` — because an override has to
+exist, or the first real emergency produces a force-push, which is worse than
+the thing it prevents.
+
 Merge only when the checks in `CONTRIBUTING.md` §5 hold. If a check cannot go
 green without credentials or a decision from the owner, leave the PR open and
 ask. A correction to merged work is a new branch and a new PR, so every

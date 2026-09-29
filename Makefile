@@ -181,3 +181,20 @@ rubric-matrix:
 	cd frontend && npx playwright test rubric-walkthrough --reporter=line
 	PYTHONPATH=backend VERITAS_NO_DOTENV=1 backend/.venv/bin/python \
 		scripts/gen_rubric_matrix.py
+
+# The pre-push hook refuses to push a commit to main that did not come from a
+# merged PR. Written as a reminder in AGENTS.md did not prevent it twice; this
+# is in front of the push instead.
+.PHONY: install-git-hooks
+install-git-hooks:
+	@test -d .git || { echo "not a git repository"; exit 1; }
+	cp scripts/hooks/pre-push .git/hooks/pre-push
+	chmod +x .git/hooks/pre-push
+	@echo "installed .git/hooks/pre-push"
+	@echo "  every commit to main must carry a merged PR reference"
+	@echo "  override deliberately with: git push --no-verify"
+
+.PHONY: uninstall-git-hooks
+uninstall-git-hooks:
+	rm -f .git/hooks/pre-push
+	@echo "removed .git/hooks/pre-push"

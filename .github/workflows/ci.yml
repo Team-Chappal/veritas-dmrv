@@ -150,3 +150,45 @@ jobs:
           name: load-test
           path: docs/load-test.json
           retention-days: 7
+
+  # Runs AFTER the push, because GitHub is what accepts it. This makes the commit
+  # VISIBLE rather than preventing it: ci-gate.py protects merges, and nothing
+  # protected pushes -- which is how dc26c66 and d26b589 both reached main with
+  # no PR and no CI.
+  #
+  # It runs on BOTH events on purpose. An earlier version was gated behind
+  # `if: push`, so on every pull request it reported SKIPPED -- and ci-gate.py
+  # counts skipped as failure, which meant the new job made the repository
+  # unmergeable. A guard that cannot run on the event it is most needed for is
+  # worse than no guard: it makes the honest path impossible.
+  #
+  #   push         -> the head of main must carry a merged PR reference
+  #   pull_request -> main must be compliant RIGHT NOW
+  #
+  # Either way the job does real work, so it never reports SKIPPED -- which
+  # ci-gate.py correctly treats as failure.
+  check-main-provenance:
+    name: Every commit on main came from a merged PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Assert the head of main carries a merged PR
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/check_main_provenance.py --ref HEAD
+      - name: Assert main is currently compliant
+        if: github.event_name != 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/check_main_provenance.py --ref origin/main
+      # The guard's own specs run in the backend-tests job, which already has the
+      # scientific stack installed. Duplicating them here meant this job needed
+      # pytest, and it does not install the requirements -- so the self-test step
+      # failed on "No module named pytest" the first time it ran. One place, and
+      # the place that can actually run them.
