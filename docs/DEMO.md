@@ -177,6 +177,38 @@ does it on every tagged release. No clone, no build, no account.
 4. **Never promise an EUDR Article 9 dossier.** The validator is not implemented.
    The pitch says this explicitly, and `test_pitch_claims.py` enforces it.
 
+## Deploying, and why `vercel --prod` alone is a trap
+
+**`make deploy`.** Not `npx vercel --prod`, for two reasons that have nothing to
+do with Vercel being difficult:
+
+**1. Merging to `main` does not deploy production.** The GitHub integration
+creates *previews*. Every production deployment on this project is a CLI one,
+which means the URL a judge was given **silently does not move when the code
+changes** — and a green CI run says nothing about what is live. That is a
+property of the setup, not a bug, and it has to be designed around.
+
+**2. A manually-assigned alias does not follow new deployments.** Assigning
+`veritas-dmrv.vercel.app` points it at *one* deployment. Every later deploy gets
+a fresh generated URL, and the short one keeps serving the old build — **with
+HTTP 200, looking completely healthy.**
+
+That is exactly what happened. The verification console shipped, the new build
+had it, the generated URL served it, and the short URL a judge had been given
+served a build from *before* it. Nothing was red anywhere. The console was simply
+not there, and the failure mode was a perfectly healthy page missing the one
+thing it exists to demonstrate.
+
+So `scripts/deploy_demo.sh` deploys, **repoints the alias explicitly**, and then
+**fetches the public URL and looks for a marker that only exists in the current
+build**. A stale alias exits non-zero with the reason. The marker is
+`Verify a claim`, and a spec asserts that string still exists in the source — so
+renaming the console makes the deploy fail for the *right* reason instead of
+silently.
+
+Verified by running it: with a marker that cannot exist, it fails and says the
+URL is not serving this build.
+
 ## What a judge actually does with it
 
 One box, near the top: **type a claim, get a verdict.** Latitude, longitude, the

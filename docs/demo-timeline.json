@@ -1,18 +1,18 @@
 {
-  "generated_utc": "2026-09-29T18:09:54.634Z",
+  "generated_utc": "2026-09-29T18:48:59.551Z",
   "viewport": {
     "width": 1280,
     "height": 720
   },
   "configuration": "backend absent (fixture mode), production build",
-  "walkthrough_seconds": 1.19,
+  "walkthrough_seconds": 1.18,
   "note": "Offsets into a scripted walkthrough at a fixed viewport on one machine, not a recording of a human presentation. Surface order and offsets are used to re-cut the 180 s pitch (7.7).",
   "surfaces": [
     {
       "bullet": "intro",
       "surface": "project-timeline",
       "label": "Timeline",
-      "offset_s": 0.19
+      "offset_s": 0.18
     },
     {
       "bullet": "1",
@@ -24,7 +24,7 @@
       "bullet": "2",
       "surface": "hotspot-player",
       "label": "Hotspot video + auto-tags",
-      "offset_s": 0.52
+      "offset_s": 0.51
     },
     {
       "bullet": "3",
@@ -42,7 +42,7 @@
       "bullet": "5",
       "surface": "semantic-search",
       "label": "Semantic search",
-      "offset_s": 1.02
+      "offset_s": 1.01
     },
     {
       "bullet": "6",
