@@ -604,3 +604,62 @@ def test_static_demo_export_is_opt_in_only() -> None:
     assert not (REPO / "frontend" / "next.export.config.mjs").exists(), (
         "an alternate config file exists but `next build` cannot select it"
     )
+
+
+# --------------------------------------------------------------------------- #
+# The deploy procedure, and the two ways it used to lie                        #
+# --------------------------------------------------------------------------- #
+
+
+def test_deploy_script_repoints_the_alias() -> None:
+    """`vercel --prod` does NOT move the public URL, and nothing says so.
+
+    A manually-assigned alias points at ONE deployment. Every later deploy gets a
+    fresh generated URL, and the short one keeps serving the old build — with
+    HTTP 200, looking completely healthy. That is precisely what happened after
+    the verification console shipped: the console was live on the generated URL
+    and absent from the short one, with no red check anywhere.
+
+    So the alias step is explicit in the script rather than implied by the deploy
+    above it. Asserted here because removing it looks harmless and is not.
+    """
+    script = (REPO / "scripts" / "deploy_demo.sh").read_text()
+    assert "/aliases" in script, (
+        "the deploy script no longer reassigns the alias, so the public URL will "
+        "quietly freeze on an old deployment"
+    )
+    assert "v13/deployments" in script
+
+
+def test_deploy_script_verifies_the_public_url() -> None:
+    """The deploy must CHECK the thing it just did, not assume it worked.
+
+    A script that deploys and exits 0 has not verified anything: the alias
+    reassignment is exactly the kind of step that can succeed and still leave the
+    wrong deployment in front. So the script fetches the public URL and looks for
+    a marker that only exists in the current build.
+    """
+    script = (REPO / "scripts" / "deploy_demo.sh").read_text()
+    assert "DEMO_MARKER" in script, "the deploy verifies nothing"
+    assert "Cache-Control: no-cache" in script, (
+        "a CDN is very good at serving you yesterday's build"
+    )
+    assert "not serving this build" in script, "no failure message for a stale URL"
+    # And it must exit non-zero, or a stale URL is reported as a successful deploy.
+    assert "exit 1" in script
+
+
+def test_the_verify_marker_exists_in_the_source() -> None:
+    """The marker has to be findable in the code, or the check is theatre.
+
+    DEMO_MARKER defaults to "Verify a claim" and the check greps the served HTML
+    for it. If the console were renamed and the default left stale, the deploy
+    would start failing for a reason that has nothing to do with deployment.
+    """
+    console = REPO / "frontend" / "components" / "VerificationConsole.tsx"
+    if not console.exists():
+        pytest.skip("the verification console is not present")
+    assert "Verify a claim" in console.read_text(), (
+        "DEMO_MARKER in scripts/deploy_demo.sh is stale; the console no longer "
+        "renders this text and every deploy will fail for the wrong reason"
+    )

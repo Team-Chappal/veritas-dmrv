@@ -250,3 +250,25 @@ demo-export: ## Build the static demo bundle into frontend/out
 	@echo "frontend/out/ is a static bundle. Serve it with anything:"
 	@echo "  cd frontend/out && python3 -m http.server 3200"
 	@echo "  # then open http://localhost:3200"
+
+# Deploy the demo, and PROVE the public URL serves it.
+#
+# `npx vercel --prod` alone is a trap here, twice over:
+#
+#   1. Merging to main does NOT deploy production. The GitHub integration makes
+#      PREVIEWS only, so every production deploy is a CLI one -- which means the
+#      URL a judge was given silently does not move when the code changes, and a
+#      green CI run says nothing about what is live.
+#   2. A manually-assigned alias does NOT follow new deployments. Assigning
+#      veritas-dmrv.vercel.app points it at ONE deployment; later deploys get new
+#      generated URLs and the short one keeps serving the old build, healthily,
+#      with HTTP 200, looking fine.
+#
+# That is exactly what happened: the verification console shipped and the short
+# URL was still serving a build from before it, with nothing red anywhere.
+#
+# So this repoints the alias and then FETCHES the public URL and looks for a
+# marker that only exists in the current build. A stale alias fails loudly.
+.PHONY: deploy
+deploy:
+	@./scripts/deploy_demo.sh
