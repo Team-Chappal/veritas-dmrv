@@ -154,6 +154,168 @@ fixture-mode degradation meanwhile.
 
 ---
 
+## S6 frontend: what the interface actually claims
+
+Six bullets, and for each one the question worth asking is not "is there a
+component" but "what does it say when it cannot do its job". A verification tool
+that is confident in every situation is not a verification tool.
+
+Baseline at the end of S6: **672 backend tests, 166 e2e, 95% coverage, five green
+CI jobs, no build warnings.**
+
+### 4. The portfolio grid organises, rather than lists
+
+Assets are grouped by project and epoch with a visible count per group, because
+"180 rows in one list" is a filing cabinet, not an organisation. Coverage gaps are
+shown as gaps rather than omitted, so an absent group reads as absent instead of
+silently blending into what is present.
+
+### 5. The search panel reports what it could not find
+
+The backend is lexical, not neural — Cosine and BM25 scoring over the Search API,
+not embeddings — and the panel says so rather than implying semantics it does not
+have. When a query returns nothing, the panel reports the empty result and names
+the fields that were searched. A search box that quietly returns nothing is
+indistinguishable from one that is broken.
+
+### 6. The provenance panel labels its own degradation
+
+Every response carries a provenance block, and the UI renders it. Panels whose
+data came from bundled fixtures are badged **Fixture**; only genuinely live
+responses are badged **Live**. The badge is never inferred from whether a request
+appears to have succeeded.
+
+### 7. The provenance panel's sibling checks
+
+Auth is enforced on every mutating route with JWT scopes (`mrv:field_upload`,
+`mrv:triage_review`, `mrv:vvb_signoff`), no implicit escalation between them, and
+production fails closed rather than degrading to open. The 44×44 target minimum,
+WCAG AAA contrast and the no-colour-alone signalling rule are asserted against
+computed styles and measured boxes, not against CSS class names — a class can be
+overridden later, and a test asserting a class exists would keep passing after
+someone overrode it.
+
+### 8. The physics HUD refuses to answer when answering would be a guess
+
+Below ~12° of solar elevation a shadow's direction is dominated by the object and
+the slope, so the comparison is **withheld**: the panel says "Cannot be determined"
+and shows `— withheld —` rather than a number. The ordering is pinned in the
+maths, not just the UI — a low-sun case whose observed shadow sits 111° from
+expected would be *quarantined* by an implementation that compared first, so a
+spec asserts it is not.
+
+Two defects were found and fixed while building it, and both are the same mistake:
+
+- The component carried a `??` fallback that **recomputed the very figure the
+  abstention exists to withhold**, so the panel printed "3.4°" on a capture it
+  had just said it could not measure.
+- The fixture's low-sun observed bearing was only 3° from expected, so the case
+  did not demonstrate the hazard it exists to demonstrate — a naive
+  implementation would have quietly *passed* it.
+
+### 9. The hotspot player is a player, not a caption generator
+
+The backend derived hotspots and the TypeScript library built and validated their
+WebVTT, but **nothing rendered a `<track>`, no marker was positioned over the
+video, and nothing was clickable.** Rubric bullet 2 was a missing component, not
+an imperfect one. `HotspotVideoPlayer` closes it.
+
+**Clicking a hotspot SEEKS the video**, asserted to land within 1.5s of the
+hotspot's start. An overlay that cannot affect the video is decoration
+pretending to be an instrument. A hotspot is clickable only while the playhead is
+inside its window, because an object that has left the frame should not be
+selectable.
+
+**The track had no `src` at all** — the blob URL was built in a `useMemo` behind a
+`typeof window` guard, so the server rendered it empty. Now a data URL computed
+identically on both sides, with the spec decoding it and asserting the body begins
+`WEBVTT` rather than merely that an attribute exists.
+
+**Marker geometry is asserted, not styled.** An earlier spec checked
+`getComputedStyle().left` for a `%`, which can never pass, because computed style
+always *resolves* a percentage to pixels. It now asserts the authored value **and**
+that the marker lands on the same *fraction* of the frame at two viewport widths.
+
+**The player arrived with a layout shift, and the criterion caught it.** A
+`<video>` has no intrinsic size until its metadata arrives, so the box was
+zero-height and then jumped to 16:9 — a measured CLS of **0.0025**. It surfaced
+only in CI, because it depends on how slow the metadata is: exactly the defect a
+"CLS is zero" claim made from a fast local run misses. The ratio is now reserved
+on the wrapper, which also guarantees the overlay and the video always occupy the
+identical rectangle. The failure message now names the shifted elements, which is
+what turned "CLS is not zero" into "<video> has no intrinsic size" on the first
+attempt.
+
+### 10. The layout shift is measured, not styled
+
+The exit criterion is CLS == 0, measured with the browser's own `layout-shift`
+performance entries rather than asserted from markup. `hadRecentInput` entries are
+excluded, since the specification already drops shifts within 500ms of a click and
+leaving them in would let a shift hide behind one.
+
+**The values must move or the measurement is vacuous** — a ticker that did not
+update would report a perfect zero while proving nothing, so a spec asserts the
+figures genuinely changed across four ticks. Three structural reasons the numbers
+can move without displacing anything: fixed height, `tabular-nums` so every digit
+shares an advance width, and width **reserved in `ch`** — tabular figures stop
+digits *changing* width but do not stop a longer number *needing* room. The
+figures are labelled *Demonstration*; a number that changes on a timer is not a
+measurement.
+
+### 11. The screenshots are evidence, and they are reproducible
+
+All six rubric bullets have a capture in `docs/screenshots/`, plus a seventh for
+the physics **abstention**, which is the strongest claim in the product and would
+be lost inside a wider shot.
+
+Captures are per-panel with the volatile state pinned (data mode set, capture
+queue cleared, fonts settled, animations disabled) and **verified byte-identical
+across consecutive runs** — md5-compared, not asserted. A `fullPage` dump of a
+page with a live ticker on it is not evidence, because the next run produces a
+different file. So a diff in that directory means a real visual change rather than
+a different random number. Each capture is also size-checked, since a screenshot
+that silently produced nothing would otherwise still pass.
+
+### 12. Offline is a durability claim, and degradation is a labelled choice
+
+**The durability claim is tested as a durability claim.** A queued capture is
+written, the page is **reloaded**, and the row is asserted still there. An
+enqueue-then-list-back test would pass even if nothing were persisted, because
+both operations would be served from the same in-memory handle.
+
+**Background Sync is allowed to be absent, and its absence names the right
+layer.** The browser exposing `sync` but rejecting registration is a *permissions
+policy* outcome, not an unreachable worker; an earlier version reported both as
+"could not reach the service worker" and sent the reader to the wrong place — in a
+tool whose subject is not blaming the wrong thing.
+
+**Demo data is a user choice, not a network side effect.** Two states only:
+`auto` (follow the network, label any fallback) and `fixture` (deliberate, and
+described as deliberate), persisted. There is no third state in which fixtures
+appear without a label.
+
+**The service worker deliberately does not cache API responses**, asserted rather
+than assumed: a cached `/api/v1/assets` would let a reviewer see yesterday's
+collection believing it is today's, which is the exact confusion every provenance
+badge exists to prevent. Error responses are not cached either, because a cached
+404 becomes a ghost asset for the rest of the session.
+
+### 13. A test-harness trap worth recording
+
+`reuseExistingServer` is enabled outside CI, so a spec can silently run against a
+**stale build** left listening on the test port. One spec passed in the full suite
+and failed when its file was run alone — not flaky, but build-dependent. A green
+local suite is only meaningful when the server it hit was built from the current
+tree. CI always builds fresh, which is why this never appeared there.
+
+This file was itself out of date for several merged stages: the S6 sections above
+were announced as written by commits that had, in fact, matched nothing, because
+the edits printed success unconditionally instead of checking they had applied.
+`verify_docs.py` reports "clean" regardless, since it checks for unsupported
+*claims* rather than missing ones. Recorded here rather than quietly fixed.
+
+---
+
 ## Where the "using Cloudinary" requirement is met
 
 The brief says *"using Cloudinary"*, so the Cloudinary surface is tracked
