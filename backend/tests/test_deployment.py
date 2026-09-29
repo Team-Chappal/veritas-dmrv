@@ -532,6 +532,53 @@ def test_demo_doc_states_what_each_tier_does_not_prove() -> None:
         assert tier in text, f"{tier} is undocumented"
 
 
+DEMO_URL = "https://veritas-dmrv.vercel.app"
+
+
+def test_documented_demo_url_is_the_one_that_is_actually_public() -> None:
+    """The README, the pitch and DEMO.md must all cite a URL that opens.
+
+    A documented URL that has been renamed, aliased behind a login, or moved is
+    worse than no URL: a judge who types it in front of a room and gets a login
+    page is a thing that happened here already.
+
+    This project shipped once with a SHORT url that answered 302 to a Vercel
+    login, because the project had `ssoProtection: all_except_custom_domains`.
+    The long url beside it was public, so checking the long one found nothing
+    wrong. The only reason it was caught is that the alias was changed and then
+    FETCHED.
+
+    Network-gated, like the other live checks: it skips rather than failing when
+    there is no connectivity, because a laptop on a train should not turn a
+    documentation typo into a red build.
+    """
+    import urllib.error
+    import urllib.request
+
+    for doc in ("README.md", "docs/DEMO.md", "docs/14-HACKATHON-PITCH-DECK-AND-PRESENTATION.md"):
+        text = (REPO / doc).read_text()
+        assert DEMO_URL in text, f"{doc} does not link the live demo"
+
+    try:
+        with urllib.request.urlopen(DEMO_URL, timeout=20) as r:
+            status, body = r.status, r.read()
+    except urllib.error.URLError as exc:
+        pytest.skip(f"no network here ({exc}); the URL is not verified in this run")
+    except Exception as exc:  # noqa: BLE001
+        pytest.fail(f"{DEMO_URL} could not be checked: {type(exc).__name__}: {exc}")
+
+    assert status == 200, (
+        f"{DEMO_URL} answered HTTP {status}. If this is a 302 to a login, "
+        "Vercel Authentication is on -- ssoProtection: all_except_custom_domains "
+        "-- and a judge cannot open the demo. See docs/S7-WORKFLOW.md."
+    )
+    assert len(body) > 10_000, f"{DEMO_URL} served {len(body)} bytes, not the app"
+    # A redirect to a login page is a 200 on a login host. Catch it explicitly.
+    assert b"Evidence portfolio" in body, (
+        f"{DEMO_URL} returned 200 but not the application -- likely a login page"
+    )
+
+
 def test_static_demo_export_is_opt_in_only() -> None:
     """The static export must not reconfigure production.
 

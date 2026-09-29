@@ -210,6 +210,16 @@ Surface order and reach times, from `make rubric-matrix` at 1280×720:
 
 ## 8. Presenter notes
 
+- **The live link: https://veritas-dmrv.vercel.app** — say it out loud once,
+  early, and put it on the final slide. A judge who wants to verify rather than
+  watch will open it during Q&A, and it works with no account, no install and no
+  keys.
+- **It is a fixture build, and that must be said.** There is no backend behind
+  it, so no Cloudinary call is made and every panel is badged `Fixture`. The
+  interface is designed so a degraded demo is visibly degraded; a presenter who
+  hides that is contradicting their own product. If a judge asks "is this live?",
+  the answer is no, and the reason is that the pipeline is exercised by the
+  tests and the harness rather than by a public URL.
 - **If the live demo fails**, the fail-safes are the ones in runbook §4: the
   demo-cache toggle in the header switches every panel to bundled fixtures with
   a visible label, and `e_preview:duration_10` streams a 10-second clip instead

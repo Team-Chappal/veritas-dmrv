@@ -316,6 +316,29 @@ test that measured nothing:
 And one in the budget: the filter threshold was 4,000 ms against a measured 162
 ms. A ceiling with 25x headroom would not catch a 25x regression, so it is 1,000.
 
+## The demo URL, and a shorter one that nobody could open
+
+Deployed 2026-09-29. First as `frontend-<random>-<team>.vercel.app`, because the
+Vercel project had been created as `frontend`. Renamed to `veritas-dmrv` and
+re-aliased:
+
+**https://veritas-dmrv.vercel.app** — `HTTP 200`, 83,787 bytes, 220 ms, service
+worker and manifest both 200, all six panels present, no API URL in the bundle.
+
+**The short URL answered `302` to a login.** The project carried
+`ssoProtection: all_except_custom_domains` — Vercel Authentication, on by default
+on the account. So the long URL was public and the short one was not, and the
+better-looking link was the one that did not work.
+
+That is a failure mode no check catches, because the thing being verified
+(the long URL) is not the thing being shipped (the short one). It was found by
+fetching the new alias and reading the redirect, which is the only reason to
+fetch a second thing.
+
+Authentication is off for **this** deployment because it is a public static
+bundle with fixture data and no secret in it. It must go back on for Tier 2,
+where real Cloudinary credentials sit behind the URL.
+
 ## Definition of done
 
 Every rubric bullet traceable to a component, a demo timestamp, and a passing
