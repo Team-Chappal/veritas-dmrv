@@ -44,6 +44,36 @@ FRONTEND_DOCKERFILE = REPO / "frontend" / "Dockerfile"
 DOCKERIGNORE = REPO / ".dockerignore"
 
 
+def _strip_ts_comments(src: str) -> str:
+    """Remove // and /* */ comments so an assertion about CODE cannot be
+    satisfied or broken by the prose around it.
+
+    PROTECTS URLS FIRST, which the first version did not. A naive scanner sees
+    "http://localhost:8000", takes the "//" for a line comment, and deletes the
+    rest of the line -- so the search string was removed by the stripper, and
+    reintroducing the very bug under test still passed. A guard that cannot see
+    the defect is worse than no guard, because it reports coverage.
+
+    Still lossy in one respect: it does not understand string literals, so a
+    "//" inside a string is treated as a comment. For the only use -- asking
+    whether a function still returns a default -- that is harmless.
+    """
+    sentinel = "\u0000URLSLASH\u0000"
+    guarded = src.replace("://", f":{sentinel}")
+    out, i, n = [], 0, len(guarded)
+    while i < n:
+        if guarded.startswith("//", i):
+            j = guarded.find("\n", i)
+            i = n if j == -1 else j
+        elif guarded.startswith("/*", i):
+            j = guarded.find("*/", i)
+            i = n if j == -1 else j + 2
+        else:
+            out.append(guarded[i])
+            i += 1
+    return "".join(out).replace(sentinel, "//")
+
+
 @pytest.fixture(scope="module")
 def compose() -> dict:
     if not COMPOSE.exists():
@@ -380,3 +410,76 @@ def test_frontend_waits_for_a_healthy_backend(compose: dict) -> None:
     assert dep.get("condition") == "service_healthy", (
         "the frontend must wait for the backend to be HEALTHY, not merely started"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Judge-facing deployment. See docs/DEMO.md.                                    #
+# --------------------------------------------------------------------------- #
+
+
+def test_vercel_config_exists() -> None:
+    """A judge-facing deploy is one of three documented tiers, and Tier 1 needs
+    a host config committed rather than a host's dashboard settings."""
+    p = REPO / "vercel.json"
+    if not p.exists():
+        pytest.fail("vercel.json is missing; docs/DEMO.md Tier 1 is not deployable")
+    import json
+
+    cfg = json.loads(p.read_text())
+    # `npm ci`, not `npm install`: an unpinned install makes the deployed build
+    # differ from the tested one, which is invisible until it breaks on stage.
+    assert cfg.get("installCommand", "").startswith("npm ci")
+    assert cfg.get("framework") == "nextjs"
+
+
+def test_demo_build_makes_no_network_requests() -> None:
+    """Tier 1 is only honest if the page asks for nothing.
+
+    The frontend runs with the backend entirely absent -- that is the S6 exit
+    criterion -- but the first implementation still FETCHED, defaulting to
+    http://localhost:8000 and degrading after connection-refused. Working by
+    accident, and reporting "Backend unreachable" when the truth was that no
+    backend had been asked for. The spec in frontend/e2e/demo-build.spec.ts
+    asserts the absence of requests; this asserts the source no longer invents a
+    default, so the two cannot drift.
+    """
+    src = (REPO / "frontend" / "lib" / "api.ts").read_text()
+    # Strip comments first. api.ts DOCUMENTS this change, so the literal text
+    # "?? \"http://localhost:8000\"" appears in the explanatory comment that
+    # describes removing it -- and the first version of this spec failed on that
+    # comment while the code was correct. A code assertion that can be satisfied
+    # or broken by prose is not a code assertion.
+    code = _strip_ts_comments(src)
+    assert '?? "http://localhost:8000"' not in code, (
+        "api.ts still invents a localhost default. A judge-facing build with no "
+        "API configured must make no request at all, not fall back to one."
+    )
+    assert "isDemoBuild" in code, "the no-API state is not a first-class case"
+
+
+def test_demo_images_are_publishable() -> None:
+    """Tier 3 -- one command for a judge -- needs a publish workflow."""
+    p = REPO / ".github" / "workflows" / "publish-demo.yml"
+    if not p.exists():
+        pytest.fail("publish-demo.yml is missing; Tier 3 of docs/DEMO.md cannot run")
+    text = p.read_text()
+    for required in ("ghcr.io", "backend/Dockerfile", "frontend/Dockerfile"):
+        assert required in text, f"the publish workflow does not build {required}"
+    # It must not publish on every branch push: that burns registry space and
+    # makes `latest` meaningless.
+    assert "tags:" in text, "the workflow triggers on nothing"
+
+
+def test_demo_doc_states_what_each_tier_does_not_prove() -> None:
+    """A demo guide that only lists what works is marketing, not documentation."""
+    p = REPO / "docs" / "DEMO.md"
+    if not p.exists():
+        pytest.fail("docs/DEMO.md is missing")
+    text = p.read_text()
+    assert "does not prove" in text.lower()
+    assert "unconfirmed" in text.lower(), (
+        "the unconfirmed webhook signature is the one surface a judge can break, "
+        "and the demo guide must say so"
+    )
+    for tier in ("Tier 1", "Tier 2", "Tier 3"):
+        assert tier in text, f"{tier} is undocumented"

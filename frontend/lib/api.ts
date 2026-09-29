@@ -31,12 +31,46 @@ export const REQUEST_TIMEOUT_MS = 4000;
  */
 const UNMEASURED = "No Cloudinary call was made.";
 
-function apiBase(): string {
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/**
+ * The API base URL, or null when none is configured.
+ *
+ * NULL, NOT A DEFAULT. The first version returned `?? "http://localhost:8000"`,
+ * which is right on a developer machine and wrong everywhere else. A
+ * judge-facing deployment has no backend on the judge's own machine, so every
+ * panel fired a request at localhost:8000, waited for connection-refused, and
+ * then degraded -- working, but by accident, after a pointless network attempt,
+ * with a reason string that said "Backend unreachable" when the truth was that
+ * no backend had ever been asked for.
+ *
+ * So an unconfigured API is a FIRST-CLASS STATE with its own reason, and the
+ * network is not touched at all. "No API configured" and "the API failed" are
+ * different facts and the panel should say which.
+ */
+function apiBase(): string | null {
+  const configured = process.env.NEXT_PUBLIC_API_URL;
+  return configured && configured.length > 0 ? configured : null;
 }
 
-/** Classify a response that arrived. Status 200 is not sufficient. */
-function classify(record: ProvenanceRecord): ProvenanceResult {
+/** True when this build has no API to talk to, and should not pretend otherwise. */
+export function isDemoBuild(): boolean {
+  return apiBase() === null;
+}
+
+/** The reason every panel shows in a build with no API configured. */
+const NO_API_REASON =
+  "Demo deployment: no API is configured, so this is served from the bundled " +
+  `fixture. No request was made. ${UNMEASURED}`;
+
+/**
+ * Classify a response that arrived. Status 200 is not sufficient.
+ *
+ * EXPORTED because this is the rule that decides whether a panel says Live or
+ * Fixture -- the single most consequential decision in the interface, and the
+ * whole reason the provenance block exists. As a module-private function it could
+ * only be reached by standing up a server, and since the e2e suite runs a build
+ * with no API configured, the live branch was not covered at all.
+ */
+export function classify(record: ProvenanceRecord): ProvenanceResult {
   const block = record._provenance;
   if (!block) {
     // No block: we cannot prove this is live, so we do not claim it is.
@@ -58,6 +92,9 @@ export async function fetchProvenance(
   publicId: string = DEMO_ASSET_ID,
   signal?: AbortSignal
 ): Promise<ProvenanceResult> {
+  if (isDemoBuild()) {
+    return { record: DEMO_PROVENANCE, source: "fixture", reason: NO_API_REASON };
+  }
   const url = `${apiBase()}/api/v1/assets/${publicId}/provenance`;
 
   const controller = new AbortController();
@@ -106,6 +143,9 @@ export async function fetchAssets(
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) {
     if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+  }
+  if (isDemoBuild()) {
+    return { data: filterFixture(filters), source: "fixture", reason: NO_API_REASON };
   }
   const query = params.toString();
   const url = `${apiBase()}/api/v1/assets${query ? `?${query}` : ""}`;
@@ -162,6 +202,9 @@ export async function fetchSearch(
   k = 20,
   signal?: AbortSignal
 ): Promise<SearchResult> {
+  if (isDemoBuild()) {
+    return { ...searchFixture(q, k), reason: NO_API_REASON };
+  }
   const params = new URLSearchParams({ q, k: String(k) });
   const url = `${apiBase()}/api/v1/search?${params.toString()}`;
 
