@@ -162,9 +162,11 @@ jobs:
   # unmergeable. A guard that cannot run on the event it is most needed for is
   # worse than no guard: it makes the honest path impossible.
   #
-  #   push        -> the head of main must carry a merged PR reference
-  #   pull_request -> main must be compliant RIGHT NOW, plus a self-test, so the
-  #                   guard is exercised before it is ever relied upon
+  #   push         -> the head of main must carry a merged PR reference
+  #   pull_request -> main must be compliant RIGHT NOW
+  #
+  # Either way the job does real work, so it never reports SKIPPED -- which
+  # ci-gate.py correctly treats as failure.
   check-main-provenance:
     name: Every commit on main came from a merged PR
     runs-on: ubuntu-latest
@@ -185,6 +187,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/check_main_provenance.py --ref origin/main
-      - name: Self-test the guard against the commits that slipped through
-        if: github.event_name != 'push'
-        run: python -m pytest backend/tests/test_push_guard.py -q
+      # The guard's own specs run in the backend-tests job, which already has the
+      # scientific stack installed. Duplicating them here meant this job needed
+      # pytest, and it does not install the requirements -- so the self-test step
+      # failed on "No module named pytest" the first time it ran. One place, and
+      # the place that can actually run them.
