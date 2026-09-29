@@ -1,5 +1,5 @@
 {
-  "generated_utc": "2026-09-29T14:57:59.351Z",
+  "generated_utc": "2026-09-29T15:18:05.186Z",
   "viewport": {
     "width": 1280,
     "height": 720
@@ -30,7 +30,7 @@
       "bullet": "3",
       "surface": "impact-studio",
       "label": "Before / after split slider",
-      "offset_s": 0.67
+      "offset_s": 0.68
     },
     {
       "bullet": "4",
@@ -48,7 +48,7 @@
       "bullet": "6",
       "surface": "provenance-panel",
       "label": "Provenance panel",
-      "offset_s": 1.17
+      "offset_s": 1.18
     }
   ]
 }

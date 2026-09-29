@@ -78,3 +78,37 @@ quoted for 4K.
 **Rule adopted:** any latency claim in `docs/` must cite a measured run from
 this file. `scripts/verify_docs.py` enforces it. An unbaselined "< 800 ms" in a
 spec is a defect, in the same class as an unverified coefficient.
+
+---
+
+## Frontend at 500 assets (measured 2026-09-29)
+
+The table above is the **backend** pipeline. This is the browser, which had never
+been measured at the scale the rubric names: the shipped fixture is 64 assets, on
+purpose, so all 175 e2e specs exercised one-eighth the target. Measured by
+`frontend/e2e/scale-500.spec.ts`, which mocks the live route with a real
+500-asset payload.
+
+| Metric | Value |
+| :-- | --: |
+| Wall clock to 500 cards rendered | **303 ms** |
+| First contentful paint | 96 ms |
+| DOMContentLoaded | 122 ms |
+| **Longest main-thread task** | **52 ms** |
+| **Cumulative layout shift** | **0** (exactly, as the criterion requires) |
+| DOM nodes | 13,976 |
+| JS heap | 22 MB |
+| Filter click → DOM settled (500 rows) | **162 ms** |
+
+Machine: the same as above (Apple M3, 8 threads, macOS 26.6.2).
+
+**The 52 ms longest task is the number to watch.** It clears the 300 ms budget the
+spec enforces, and it exceeds the 50 ms frame budget, so at 500 rows there is
+already a dropped frame during the initial paint. It is not visible as a stutter
+at this size; it would be at 2,000. The honest reading is that 500 is comfortable
+and the next order of magnitude is not, and nothing here establishes where the
+knee is.
+
+**The fixture stays at 64.** Shipping 520 rows would bloat the bundle for a page
+that displays a page of results. The scale is reached by mocking the live route
+instead, which exercises the same code path production uses.

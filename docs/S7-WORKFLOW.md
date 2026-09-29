@@ -273,6 +273,49 @@ Two bugs in the fix, both mine:
   The commit carried one line. A commit message is a claim about the change, and
   this session had just spent itself catching claims that were not true.
 
+## Rubric bullet 1 in the browser, at 500
+
+The load test proved 500 assets through the **backend**. Nobody had ever rendered
+500 in a **browser** -- the shipped fixture is 64 assets, on purpose, so all 175
+e2e specs exercised one-eighth of the size the rubric names.
+
+Measured by `frontend/e2e/scale-500.spec.ts`, which mocks the live route with a
+real 500-asset payload. The fixture stays at 64; the scale is reached through the
+code path production actually uses.
+
+| Metric | Value |
+| :-- | --: |
+| Wall clock to 500 cards | **303 ms** |
+| First contentful paint | 96 ms |
+| **Longest main-thread task** | **52 ms** |
+| **Cumulative layout shift** | **0** |
+| DOM nodes | 13,976 |
+| Filter click → settled | **162 ms** |
+
+**No product defect at 500.** The longest task exceeds the 50 ms frame budget, so
+there is already a dropped frame at initial paint; it is not visible at this size
+and would be at 2,000. Nothing here establishes where the knee is, and the report
+says so rather than calling 500 "fast".
+
+**Three defects in the measurement instead**, all of which produced a *passing*
+test that measured nothing:
+
+1. A glob ending `assets?*` never matched, because `?` in a Playwright glob is a
+   single-character wildcard, not the query separator. The page fell back to
+   fixtures and rendered 24 of 64.
+2. A greedy `assets**` glob **also** matched
+   `/api/v1/assets/{id}/provenance`, so the provenance panel was served a
+   500-row LIST payload, read it as a record, and threw during render — which
+   unmounted the grid to 0 cards. A scale test that measures nothing and reports
+   a pass is the worst outcome available, so the sub-route capture is now pinned
+   by its own spec.
+3. The first comment I wrote about the glob **contained `*/`**, which closed the
+   block comment and left a file that did not parse. Writing down the lesson broke
+   the lesson.
+
+And one in the budget: the filter threshold was 4,000 ms against a measured 162
+ms. A ceiling with 25x headroom would not catch a 25x regression, so it is 1,000.
+
 ## Definition of done
 
 Every rubric bullet traceable to a component, a demo timestamp, and a passing
