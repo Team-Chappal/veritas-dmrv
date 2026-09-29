@@ -150,3 +150,23 @@ jobs:
           name: load-test
           path: docs/load-test.json
           retention-days: 7
+
+  # Runs AFTER the push, because GitHub is what accepts it. This makes the
+  # commit visible instead of preventing it: ci-gate.py protects merges, and
+  # nothing protected pushes -- which is how dc26c66 and d26b589 both reached
+  # main with no PR and no CI.
+  check-main-provenance:
+    name: Every commit on main came from a merged PR
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Assert the head of main carries a merged PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/check_main_provenance.py --ref HEAD
