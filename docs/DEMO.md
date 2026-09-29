@@ -46,10 +46,32 @@ reason, which is the product behaving correctly rather than degraded.
 cd frontend && npx vercel --prod
 ```
 
-**DEPLOYED 2026-09-29:** https://frontend-pi-dusky-zdgjl1ct68.vercel.app
-— `HTTP 200`, 83,787 bytes, service worker and manifest both 200, all six panels
-present in the served HTML, and no API URL anywhere in the delivered bundle.
-Verified by fetching the deployment, not by trusting the CLI's success message.
+**DEPLOYED 2026-09-29:** **https://veritas-dmrv.vercel.app**
+— `HTTP 200`, 83,787 bytes, 220 ms, service worker and manifest both 200, all six
+panels present in the served HTML, and no API URL anywhere in the delivered
+bundle. Verified by fetching the deployment, not by trusting the CLI's success
+message.
+
+### The URL was long because the project was named `frontend`
+
+Vercel generated `frontend-<random>-<team>.vercel.app`. Renaming the project to
+`veritas-dmrv` and assigning the alias gives the short form above.
+
+**The short URL was initially unreachable to a judge.** It answered `302` to a
+Vercel login, because the project carried `ssoProtection:
+all_except_custom_domains` — Vercel Authentication, on by default on the
+account.
+
+That is the worst possible order to discover it in: the long URL was public and
+the short one was not. A better-looking link that nobody outside the team can
+open is worse than a long link that works, and no amount of checking the long one
+would have found it.
+
+Disabling authentication is correct **here**, because the bundle is a public
+static artefact with fixture data and no secret in it. It is **not** correct for
+a build with real credentials behind it — that is the Tier 2 caveat, and it is
+worth stating plainly: a short public URL is not a substitute for not leaking
+keys.
 
 **`vercel.json` must be in `frontend/`, not the repo root.** It was committed at
 the root and Vercel ignored every line of it without a word — `vercel build`

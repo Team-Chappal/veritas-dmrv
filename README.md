@@ -9,6 +9,25 @@ record survive challenge?*
 
 Built for **Code Cubicle 6.0 — Problem Statement 02 (Cloudinary)**.
 
+### Live demo
+
+**https://veritas-dmrv.vercel.app**
+
+Opens in any browser, no install, no account, no keys. A static bundle of
+1.1 MB served from a CDN — it works with the backend *entirely absent*, which is
+the design, not a fallback: every panel is badged `Fixture` and says why.
+
+> **Every number in that demo is a fixture.** There is no backend behind it, so
+> no Cloudinary call is made. The panels label themselves accordingly, and
+> `docs/14` separates what is measured from what is claimed on a stage.
+
+To run the full stack locally instead — mock backend, real API, everything
+degrading honestly when credentials are absent:
+
+```bash
+make verify-docker    # or: make dev-mock
+```
+
 ---
 
 ## Quickstart
@@ -160,10 +179,37 @@ make lint             # import + doc-claim linter
 make verify           # fixtures-check + full suite
 ```
 
-## Deployment note
+## Deployment
 
-The specification volume is a **FAT32 USB drive**, which is case-insensitive and
-measures **~176× slower** than APFS for small-file writes (26.35s vs 0.15s per
-2000 files). An `npm install` creates ~40,000 files. Development therefore
-happens on local APFS; `make sync-usb` mirrors source to the volume for
-portability. Do not run `npm install` or `git` on the FAT32 volume.
+### Live
+
+**https://veritas-dmrv.vercel.app** — a static bundle, no server runtime, no
+credentials. The Vercel project's Root Directory is `frontend/` and
+`vercel.json` lives there; a copy at the repo root is ignored **in silence**,
+which cost a real deployment once (see `docs/S7-WORKFLOW.md`).
+
+Every push to `main` redeploys through the GitHub integration, and
+`scripts/ci-gate.py` refuses to merge while the resulting preview check is red.
+
+### Locally
+
+```bash
+make verify-docker   # both images build, stack healthy, demo answers
+make demo-export     # static bundle into frontend/out/ — serves with
+                     # `python3 -m http.server` on a machine with no Node
+```
+
+`make demo-export` is the offline fallback: 1.1 MB of files that run anywhere,
+which is what you want when the thing you do not trust is the network.
+
+### Mirrors are optional
+
+The spec volume is a **FAT32 USB drive**: case-insensitive and **~176× slower**
+than APFS for small-file writes (26.35s vs 0.15s per 2000 files), so `npm install`
+(~40,000 files) and `git` do not belong on it. It is not required, and
+`make sync-usb` exits cleanly when it is absent.
+
+Both mirror targets exclude `backend/.env`, `*.pem` and `*.key`. That is not a
+convention: the mirrors once shipped live Cloudinary credentials and a C2PA
+signing key onto removable media, because `.gitignore` protects a file from git
+and does nothing about `rsync`.
