@@ -16,6 +16,7 @@
 import CampaignStudio from "@/components/CampaignStudio";
 import PortfolioGrid from "@/components/PortfolioGrid";
 import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
+import ForensicPhysicsHUD from "@/components/ForensicPhysicsHUD";
 import ProjectTimeline from "@/components/ProjectTimeline";
 import SemanticSearch from "@/components/SemanticSearch";
 import ProvenancePanel from "@/components/ProvenancePanel";
@@ -109,6 +110,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* The shadow-coherence check, including the case it refuses to answer. */}
+      <ForensicPhysicsHUD />
 
       {/* Rubric intro + bullet 4 — timeline with its gaps, and the summary card. */}
       <ProjectTimeline />
