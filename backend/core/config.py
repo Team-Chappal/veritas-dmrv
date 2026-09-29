@@ -95,6 +95,28 @@ class Settings:
         in {"1", "true", "yes", "on"}
     )
 
+    #: Browser origins permitted to call this API. Comma-separated.
+    #:
+    #: THE DEFAULT IS `*` AND THAT IS RIGHT FOR LOCAL DEV, WRONG FOR A DEPLOYMENT.
+    #: Wide open is what lets the Next dev server on a different port talk to a
+    #: mock backend with no configuration, and the S6 exit criterion is that the
+    #: app works with the backend entirely absent -- which CORS must not get in
+    #: the way of.
+    #:
+    #: It becomes wrong the moment the backend is deployed, because then it is an
+    #: unauthenticated public API driving somebody's Cloudinary quota: any page
+    #: on the internet can script against it, and the mutating routes are JWT-
+    #: protected but the READ routes are not. So a deployment must name its
+    #: origins, and this setting is how.
+    #:
+    #: Set to `none` to deny every browser origin outright, which is the correct
+    #: setting for a backend nothing is meant to call -- a queue worker, a cron
+    #: endpoint, a migration job.
+    cors_allow_origins: list[str] = field(
+        default_factory=lambda: _env("CORS_ALLOW_ORIGINS", default="*")
+        .split(",")
+    )
+
     # Rubric-relevant tuning
     shadow_coherence_tolerance_deg: float = 12.0
     phash_duplicate_threshold: int = 12

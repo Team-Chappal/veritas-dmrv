@@ -119,9 +119,28 @@ app = FastAPI(
     ),
 )
 
+from core.config import get_settings  # noqa: E402
+
+# Origins come from settings, not a literal.
+#
+# It was allow_origins=["*"], hardcoded, which is fine on a laptop and wrong the
+# moment this is deployed: a wide-open CORS policy is an unauthenticated public
+# API that anybody can script against, driving this deployment's Cloudinary quota.
+# The mutating routes carry JWT scopes; the READ routes deliberately do not,
+# because they are the demo surface. So the read surface is exactly the thing
+# that must not be reachable from every site on the internet.
+#
+# The default is still `*` so the S6 exit criterion -- the app works with the
+# backend entirely absent, and with no configuration -- keeps holding.
+_cors = get_settings().cors_allow_origins
+_ALLOWED = [o.strip() for o in _cors if o.strip() and o.strip().lower() != "none"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED,
+    # Credentials are off, and must stay off: the browser refuses
+    # Access-Control-Allow-Origin: * alongside credentials anyway, so the two
+    # settings together would mean a wildcard that silently never applies.
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -154,8 +173,6 @@ from core.auth import (  # noqa: E402
     issue_token,
     principal_from_header,
 )
-from core.config import get_settings  # noqa: E402
-
 # --------------------------------------------------------------------------- #
 # Auth: 401 / 403 / 503 mapping (S5.8)
 # --------------------------------------------------------------------------- #

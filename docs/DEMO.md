@@ -101,23 +101,54 @@ artefact and not a project defect. Worth knowing before someone chases it.
 
 ### Tier 2 — Public URL, live Cloudinary (the full pitch)
 
-Same frontend, plus the backend deployed somewhere that runs a ~2 GB image
-(OpenCV, SciPy, pvlib, astropy), with `CLOUDINARY_*` in the environment.
+Same frontend, plus the backend deployed to a container host. `fly.toml` and
+`render.yaml` are committed; either works.
 
 ```bash
-# Frontend
-cd frontend && npx vercel --prod
-#   NEXT_PUBLIC_API_URL = https://<your-backend-host>
-# Backend (any container host; see the notes below)
-docker build -f backend/Dockerfile -t veritas-backend .
-docker run -p 8000:8000 -e CLOUDINARY_URL -e CLOUDINARY_API_KEY \
-  -e CLOUDINARY_API_SECRET -e CLOUDINARY_CLOUD_NAME veritas-backend
+fly launch --no-deploy --config fly.toml --copy-config
+fly secrets set CLOUDINARY_URL=... CLOUDINARY_API_KEY=... \
+                  CLOUDINARY_API_SECRET=... CLOUDINARY_CLOUD_NAME=... \
+                  CORS_ALLOW_ORIGINS=https://veritas-dmrv.vercel.app \
+                  RATE_LIMIT_PER_MINUTE=600
+fly deploy
+
+# then, in the Vercel project, set NEXT_PUBLIC_API_URL to the Fly URL and redeploy
 ```
 
-- **What it proves:** everything, including the sponsor surface — search,
-  transformations, video analysis, C2PA.
-- **What it costs:** a container host and a public backend URL. **The backend
-  must have CORS configured for the frontend's origin** or every panel degrades.
+**Measured cold start: 0.87 s to serving.** pvlib is the cost (0.94 s to
+import); astropy is lazy. That is why a machine that stays warm is preferred over
+one that scales to zero — a demo should not open with a ten-second wait.
+
+**`CORS_ALLOW_ORIGINS` IS NOT OPTIONAL.** The default is `*`, which on a laptop
+is a convenience and on a deployed machine is an unauthenticated public API that
+anybody can script against, driving this deployment's Cloudinary quota. The
+mutating routes carry JWT scopes; **the read routes deliberately do not, because
+they are the demo surface a judge is meant to poke** — so CORS is the only
+control on them, which is exactly why it moved from a hardcoded literal to
+`Settings.cors_allow_origins` with 9 specs.
+
+**Raise the rate limit.** `RATE_LIMIT_PER_MINUTE` defaults to 60. One page load
+is ~6 calls, so 60/min is **ten page loads a minute** — and several judges
+opening the link at once is the expected case here, not the abusive one.
+
+### The security model, stated once
+
+An earlier note in this document said authentication should be re-enabled on the
+Vercel project when the backend goes live. **That is wrong, and following it
+would break the demo.**
+
+- The **frontend stays public.** It is a static bundle. Putting auth on it means
+  a judge gets a login page instead of the product, which is the thing this
+  whole tier exists to provide.
+- The **backend is restricted by CORS**, to the frontend's origin only, plus JWT
+  on mutating routes and rate limiting on everything.
+- **Credentials never leave the backend.** They are host environment variables.
+  A frontend bundle with a Cloudinary key in it is the one mistake that makes
+  every other control decorative.
+
+The real risk in Tier 2 is not the URL being public. It is a credential ending
+up in the bundle, which is why `NEXT_PUBLIC_*` is the only place any URL goes and
+why the deployment spec greps the built bundle for a backend URL.
 
 ### Tier 3 — One command, no hosting (best for a live stage)
 
