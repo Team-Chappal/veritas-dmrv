@@ -151,14 +151,23 @@ jobs:
           path: docs/load-test.json
           retention-days: 7
 
-  # Runs AFTER the push, because GitHub is what accepts it. This makes the
-  # commit visible instead of preventing it: ci-gate.py protects merges, and
-  # nothing protected pushes -- which is how dc26c66 and d26b589 both reached
-  # main with no PR and no CI.
+  # Runs AFTER the push, because GitHub is what accepts it. This makes the commit
+  # VISIBLE rather than preventing it: ci-gate.py protects merges, and nothing
+  # protected pushes -- which is how dc26c66 and d26b589 both reached main with
+  # no PR and no CI.
+  #
+  # It runs on BOTH events on purpose. An earlier version was gated behind
+  # `if: push`, so on every pull request it reported SKIPPED -- and ci-gate.py
+  # counts skipped as failure, which meant the new job made the repository
+  # unmergeable. A guard that cannot run on the event it is most needed for is
+  # worse than no guard: it makes the honest path impossible.
+  #
+  #   push        -> the head of main must carry a merged PR reference
+  #   pull_request -> main must be compliant RIGHT NOW, plus a self-test, so the
+  #                   guard is exercised before it is ever relied upon
   check-main-provenance:
     name: Every commit on main came from a merged PR
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -167,6 +176,15 @@ jobs:
         with:
           python-version: "3.13"
       - name: Assert the head of main carries a merged PR
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/check_main_provenance.py --ref HEAD
+      - name: Assert main is currently compliant
+        if: github.event_name != 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/check_main_provenance.py --ref origin/main
+      - name: Self-test the guard against the commits that slipped through
+        if: github.event_name != 'push'
+        run: python -m pytest backend/tests/test_push_guard.py -q

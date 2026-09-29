@@ -19,11 +19,19 @@ which commit slipped through rather than the gap being discovered weeks later.
 Combined with the ``pre-push`` hook installed by ``make install-git-hooks``, the
 local half of the protection is in front of you instead of behind you.
 
+``--repo`` exists because the specs run this against throwaway repositories in
+``tmp_path``. The first version of those specs ran it against THIS repository, and
+so depended on full clone history and a checked-out ``main`` -- which a shallow,
+detached CI checkout has neither of. Five of them failed in CI, and the one that
+created a scratch commit left it on ``HEAD`` and took three more down with it. A
+spec that depends on the state of the repository it runs in is not a spec.
+
 Usage
 -----
-    scripts/check_main_provenance.py            # check origin/main
-    scripts/check_main_provenance.py --ref HEAD # check a local ref
-    scripts/check_main_provenance.py --no-gh    # offline: structure only
+    scripts/check_main_provenance.py                    # check origin/main
+    scripts/check_main_provenance.py --ref HEAD         # check a local ref
+    scripts/check_main_provenance.py --no-gh            # offline: structure only
+    scripts/check_main_provenance.py --repo /tmp/somegit --ref main
 """
 
 from __future__ import annotations
@@ -49,10 +57,10 @@ EXEMPT_PREFIXES = (
 )
 
 
-def git(*args: str) -> str:
+def git(repo: Path, *args: str) -> str:
     out = subprocess.run(
         ["git", *args],
-        cwd=REPO,
+        cwd=repo,
         capture_output=True,
         text=True,
         check=True,
@@ -60,16 +68,28 @@ def git(*args: str) -> str:
     return out.stdout.strip()
 
 
-def head_subject(ref: str) -> str:
-    return git("log", "-1", "--format=%s", ref)
+def git_or_none(repo: Path, *args: str) -> str | None:
+    """git, or None when the ref does not exist here.
+
+    A shallow or partial clone does not have every commit, and a spec that
+    assumed it did was the bug.
+    """
+    try:
+        return git(repo, *args)
+    except subprocess.CalledProcessError:
+        return None
 
 
-def gh_pr_state(number: int) -> str | None:
+def head_subject(repo: Path, ref: str) -> str | None:
+    return git_or_none(repo, "log", "-1", "--format=%s", ref)
+
+
+def gh_pr_state(repo: Path, number: int) -> str | None:
     """The PR's state, or None if the lookup failed."""
     try:
         out = subprocess.run(
             ["gh", "pr", "view", str(number), "--json", "state,mergedAt"],
-            cwd=REPO,
+            cwd=repo,
             capture_output=True,
             text=True,
             check=True,
@@ -86,22 +106,28 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--ref", default="origin/main")
     ap.add_argument(
+        "--repo",
+        type=Path,
+        default=REPO,
+        help="git repository to inspect; the specs pass a throwaway one",
+    )
+    ap.add_argument(
         "--no-gh",
         action="store_true",
         help="skip the GitHub lookup; only assert the commit carries a PR ref",
     )
     args = ap.parse_args()
 
-    try:
-        subject = head_subject(args.ref)
-    except subprocess.CalledProcessError:
+    subject = head_subject(args.repo, args.ref)
+    if subject is None:
         print(
-            f"SKIP: cannot resolve {args.ref}; fetch first",
+            f"SKIP: cannot resolve {args.ref} in {args.repo}; it may be absent "
+            "from this clone",
             file=sys.stderr,
         )
         return 0
 
-    sha = git("rev-parse", "--short", args.ref)
+    sha = git(args.repo, "rev-parse", "--short", args.ref)
     print(f"{args.ref} @ {sha}: {subject}")
 
     if subject.startswith(EXEMPT_PREFIXES):
@@ -125,7 +151,7 @@ def main() -> int:
         print(f"  PR #{number} referenced (lookup skipped)")
         return 0
 
-    state = gh_pr_state(number)
+    state = gh_pr_state(args.repo, number)
     if state is None:
         print(
             f"\nWARN: could not read PR #{number} via the GitHub CLI. Treating as "

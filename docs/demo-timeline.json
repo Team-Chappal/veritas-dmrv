@@ -1,5 +1,5 @@
 {
-  "generated_utc": "2026-09-29T12:11:25.835Z",
+  "generated_utc": "2026-09-29T12:39:25.451Z",
   "viewport": {
     "width": 1280,
     "height": 720
@@ -12,7 +12,7 @@
       "bullet": "intro",
       "surface": "project-timeline",
       "label": "Timeline",
-      "offset_s": 0.17
+      "offset_s": 0.18
     },
     {
       "bullet": "1",
@@ -30,7 +30,7 @@
       "bullet": "3",
       "surface": "impact-studio",
       "label": "Before / after split slider",
-      "offset_s": 0.67
+      "offset_s": 0.68
     },
     {
       "bullet": "4",

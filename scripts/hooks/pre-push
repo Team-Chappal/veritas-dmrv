@@ -44,6 +44,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
   commits=0
   failures=0
+  unverified=0
   if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
     # First push to an empty main: check the single head commit.
     revs=("$local_sha")
@@ -61,17 +62,35 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     fi
     if [[ "$subject" =~ \(#([0-9]+)\)$ ]]; then
       pr="${BASH_REMATCH[1]}"
-      if command -v gh >/dev/null 2>&1; then
-        state="$(gh pr view "$pr" --json state -q .state 2>/dev/null || echo "UNKNOWN")"
-        if [[ "$state" == "MERGED" ]]; then
-          echo "  ok      $sha  PR #$pr merged"
-          continue
-        fi
-        echo "  BLOCKED $sha  PR #$pr is $state, not MERGED"
-      else
-        echo "  warn    $sha  PR #$pr referenced; gh not installed, cannot confirm"
+      if ! command -v gh >/dev/null 2>&1; then
+        # Fail CLOSED, but say so differently from a genuine rejection. An early
+        # version warned and let the push through here while blocking on a
+        # genuinely-unmerged PR, so the hook was advisory about the one case that
+        # mattered most.
+        echo "  BLOCKED $sha  PR #$pr referenced, but the gh CLI is not installed"
+        echo "           so the PR state could not be confirmed"
+        unverified=$((unverified + 1))
+        failures=$((failures + 1))
         continue
       fi
+      state="$(gh pr view "$pr" --json state -q .state 2>/dev/null || echo UNRESOLVED)"
+      if [[ "$state" == "MERGED" ]]; then
+        echo "  ok      $sha  PR #$pr merged"
+        continue
+      fi
+      if [[ "$state" == "UNRESOLVED" ]]; then
+        # "I could not check" is not the same claim as "the PR is not merged",
+        # and the hook used to report both as BLOCKED with one message, so a
+        # repository with no GitHub remote looked identical to a policy
+        # violation. Now the two are distinguishable, which is the difference
+        # between a guard and an obstacle.
+        echo "  BLOCKED $sha  PR #$pr could not be resolved from here"
+        echo "           (no usable remote, offline, or gh cannot see it)"
+        unverified=$((unverified + 1))
+        failures=$((failures + 1))
+        continue
+      fi
+      echo "  BLOCKED $sha  PR #$pr is $state, not MERGED"
       failures=$((failures + 1))
     else
       echo "  BLOCKED $sha  no pull-request reference in the subject"
@@ -82,6 +101,15 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   if (( failures > 0 )); then
     echo ""
     echo "pre-push: $failures of $commits commit(s) on main have no merged PR behind them."
+    if (( unverified > 0 )); then
+      echo ""
+      echo "  $unverified of those could not be VERIFIED rather than rejected --"
+      echo "  the PR state was unreachable. That is not the same as a violation,"
+      echo "  and it usually means the gh CLI is not authenticated, there is no"
+      echo "  GitHub remote here, or the network is down."
+      echo ""
+      echo "  Re-authenticate and retry:  gh auth status"
+    fi
     echo ""
     echo "  Every commit lands as a PR. Open one, or -- if this is a correction to"
     echo "  already-merged work -- re-land it the same way: a branch, a PR, and a"
