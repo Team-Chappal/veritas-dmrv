@@ -16,6 +16,7 @@
 import CampaignStudio from "@/components/CampaignStudio";
 import PortfolioGrid from "@/components/PortfolioGrid";
 import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
+import ProjectTimeline from "@/components/ProjectTimeline";
 import SemanticSearch from "@/components/SemanticSearch";
 import ProvenancePanel from "@/components/ProvenancePanel";
 
@@ -108,6 +109,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* Rubric intro + bullet 4 — timeline with its gaps, and the summary card. */}
+      <ProjectTimeline />
 
       {/* Rubric bullet 4 — campaign content, including the one that is gated. */}
       <CampaignStudio />
