@@ -3,6 +3,11 @@ import { expect, test } from "@playwright/test";
 /**
  * S6 exit criterion 5: the demo works with the backend entirely absent.
  *
+ * NOTE on waiting: use `domcontentloaded`, never `networkidle`. The page carries
+ * a <video>, whose media connection stays open, so `networkidle` never settles
+ * and every spec times out at 30s while the page is perfectly fine. Locator
+ * assertions auto-wait, so nothing is lost.
+ *
  * This is the first e2e spec in the project, and it deliberately asserts the
  * SHAPE of a page rather than any content that a component will add later. Its
  * job is to prove the harness itself is wired: a spec suite that has never been
@@ -30,7 +35,7 @@ test.describe("Stage 6 exit criterion 5 — backend absent", () => {
 
     // Nothing here is stubbed or routed. If this needs an API call to render,
     // that is a defect in the component, not a missing fixture.
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
 
     await expect(page.locator("main")).toBeVisible();
     expect(failures, `console errors: ${failures.join(" | ")}`).toHaveLength(0);

@@ -21,12 +21,14 @@ const ASSETS_ROUTE = /\/api\/v1\/assets(\?|$)/;
 
 test.describe("PortfolioGrid", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
   });
 
   test("renders a grid of asset cards", async ({ page }) => {
     await expect(page.getByTestId("portfolio-grid")).toBeVisible();
     const cards = page.getByTestId("asset-card");
+    // toHaveCount auto-waits; a bare count() would read 0 and pass anyway.
+    await expect(cards.first()).toBeVisible();
     expect(await cards.count()).toBeGreaterThan(5);
   });
 
@@ -58,6 +60,8 @@ test.describe("PortfolioGrid", () => {
   });
 
   test("filtering narrows the grid to exactly what the chip promised", async ({ page }) => {
+    // Cards are data-derived, so wait for them before counting a baseline.
+    await expect(page.getByTestId("asset-card").first()).toBeVisible();
     const before = await page.getByTestId("asset-card").count();
 
     const chip = page.getByTestId("filter-decision-QUARANTINE_FRAUD");
@@ -81,6 +85,7 @@ test.describe("PortfolioGrid", () => {
   });
 
   test("a filter can be toggled off", async ({ page }) => {
+    await expect(page.getByTestId("asset-card").first()).toBeVisible();
     const before = await page.getByTestId("asset-card").count();
     const chip = page.getByTestId("filter-decision-REVIEW_AMBIGUOUS");
 
@@ -113,13 +118,20 @@ test.describe("PortfolioGrid", () => {
   });
 
   test("applying a filter does not make the other chips disappear", async ({ page }) => {
+    // WAIT for the facets. A raw `.count()` right after navigation can read 0
+    // because the chips are data-derived and the fetch has not resolved -- and
+    // a count of 0 then satisfies every "the chips did not vanish" assertion
+    // below, which is how this test passed vacuously in one run and failed in
+    // the next. `toHaveCount` auto-waits; `.count()` does not.
     // THE TRAP. Counting the `decision` facet with the `decision` filter applied
     // collapses it to the single selected value, so the other chips vanish and
     // the reviewer cannot switch straight from "quarantined" to "review" — only
     // clear the filter first. Each axis must be counted with its OWN filter
     // lifted, which is standard faceted-search behaviour.
-    const before = await page.locator('[data-testid^="filter-decision-"]').count();
-    expect(before).toBeGreaterThan(1);
+    const chips = page.locator('[data-testid^="filter-decision-"]');
+    await expect(chips.first()).toBeVisible();
+    await expect.poll(async () => chips.count()).toBeGreaterThan(1);
+    const before = await chips.count();
 
     await page.getByTestId("filter-decision-QUARANTINE_FRAUD").click();
     await expect(page.locator('[data-testid^="filter-decision-"]')).toHaveCount(before);
@@ -200,7 +212,7 @@ test.describe("PortfolioGrid", () => {
         }),
       })
     );
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
 
     // "No assets" is ambiguous: a gap in coverage, or a broken query? The copy
     // resolves it, because on this product the difference matters.
@@ -238,7 +250,7 @@ test.describe("PortfolioGrid", () => {
         }),
       })
     );
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("portfolio-source")).toContainText("Fixture");
   });
 
@@ -285,7 +297,7 @@ test.describe("PortfolioGrid", () => {
         }),
       })
     );
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
 
     // An unmapped status must not render as a neutral box. Surfacing the raw
     // value is what lets someone notice the backend changed it.

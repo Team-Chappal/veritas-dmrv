@@ -13,6 +13,7 @@
  *   3. Compare before-and-after          -> ProofOfImpactStudio
  */
 
+import CampaignStudio from "@/components/CampaignStudio";
 import PortfolioGrid from "@/components/PortfolioGrid";
 import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
 import SemanticSearch from "@/components/SemanticSearch";
@@ -107,6 +108,9 @@ export default function Home() {
           </article>
         ))}
       </section>
+
+      {/* Rubric bullet 4 — campaign content, including the one that is gated. */}
+      <CampaignStudio />
 
       {/* Rubric bullet 3 — before/after, qualified by registration quality. */}
       <ProofOfImpactStudio />

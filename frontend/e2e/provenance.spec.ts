@@ -14,7 +14,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("ProvenancePanel", () => {
   test("renders the master asset and its hash", async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
 
     const panel = page.getByTestId("provenance-panel");
     await expect(panel).toBeVisible();
@@ -25,7 +25,7 @@ test.describe("ProvenancePanel", () => {
   });
 
   test("labels itself FIXTURE when the backend is absent", async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
 
     // The assertion that carries the weight: a 200-less, unreachable backend
     // must never be presented as a live read.
@@ -37,7 +37,7 @@ test.describe("ProvenancePanel", () => {
   });
 
   test("explains WHY it degraded, in a live region", async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
 
     const reason = page.getByTestId("provenance-reason");
     await expect(reason).toBeVisible();
@@ -47,7 +47,7 @@ test.describe("ProvenancePanel", () => {
   });
 
   test("renders the transformation chain as an ordered list", async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
 
     const chain = page.getByTestId("provenance-chain");
     await expect(chain.locator("li")).toHaveCount(3);
@@ -57,7 +57,7 @@ test.describe("ProvenancePanel", () => {
   });
 
   test("states the C2PA status in words, not colour alone", async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
 
     const c2pa = page.getByTestId("provenance-c2pa");
     // Greyscale-printable: a word is present regardless of how it is rendered.
@@ -66,7 +66,7 @@ test.describe("ProvenancePanel", () => {
   });
 
   test("is reachable and labelled for assistive tech", async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
 
     const panel = page.getByTestId("provenance-panel");
     await expect(panel).toHaveAttribute("aria-labelledby", "provenance-heading");
@@ -125,7 +125,7 @@ test.describe("ProvenancePanel", () => {
       })
     );
 
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("provenance-source")).toContainText("Fixture");
   });
 
@@ -162,7 +162,7 @@ test.describe("ProvenancePanel", () => {
       })
     );
 
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
 
     await expect(page.getByTestId("provenance-source")).toContainText("Live");
     // No degradation banner when genuinely live.

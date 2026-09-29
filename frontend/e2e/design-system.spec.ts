@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("Design-system rules", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
   });
 
   test("every status carries a text label, not only colour", async ({ page }) => {

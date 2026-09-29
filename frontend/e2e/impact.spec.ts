@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("ProofOfImpactStudio", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
   });
 
   test("shows the inlier ratio AND the canopy delta", async ({ page }) => {
@@ -124,8 +124,13 @@ test.describe("ProofOfImpactStudio", () => {
     // clientWidth, falling back to 800px before the ref resolved -- so in a 602px
     // track the progress frame rendered at 800px against a baseline scaled to
     // 602. The edges lined up, which is why a screenshot review missed it.
+    const panel = page.getByTestId("impact-studio");
     const track = await page.getByTestId("slider-track").boundingBox();
-    const img = await page.locator("img").first().boundingBox();
+    // Scoped to THIS panel. `page.locator("img").first()` is document order, so
+    // the CampaignStudio previews -- inserted earlier on the page -- captured it,
+    // and the spec started measuring the wrong image. It failed only when the
+    // whole suite ran, which is the worst way for a locator bug to surface.
+    const img = await panel.locator("img").first().boundingBox();
     expect(track).not.toBeNull();
     expect(img).not.toBeNull();
     expect(
@@ -147,7 +152,8 @@ test.describe("ProofOfImpactStudio", () => {
   });
 
   test("both frames are labelled for assistive tech", async ({ page }) => {
-    const imgs = page.locator("img");
+    // Scoped for the same reason as above.
+    const imgs = page.getByTestId("impact-studio").locator("img");
     const n = await imgs.count();
     expect(n).toBeGreaterThan(0);
     for (let i = 0; i < n; i++) {
@@ -160,7 +166,10 @@ test.describe("ProofOfImpactStudio", () => {
     // The label was painted into the SVG only, so it never reached a screen
     // reader -- the one user who cannot check the pixels. It has to be in the
     // alt text, not merely drawn.
-    const img = page.locator("img").first();
+    // Scoped, for the same reason: an unscoped `img.first()` captured the
+    // CampaignStudio preview, whose alt says "not field evidence" but not
+    // "synthetic" -- so this asserted against the wrong element.
+    const img = page.getByTestId("impact-studio").locator("img").first();
     await expect(img).toHaveAttribute("alt", /synthetic/i);
     await expect(img).toHaveAttribute("alt", /not field evidence/i);
   });
