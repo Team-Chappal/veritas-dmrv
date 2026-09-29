@@ -14,8 +14,10 @@ git switch -c <type>/<short-description>
 # ... work ...
 git push -u origin <branch>
 gh pr create --base main --title "..." --body "..."
-gh pr checks <n>                       # read the real list; assume nothing
-gh pr merge <n> --squash --delete-branch
+# Read the check list in a way that cannot be truncated into a false pass.
+# `gh pr checks <n> | tail -3` HID a failure once already, and a PR went out with
+# a red e2e job. Use the helper, which exits non-zero unless everything passed.
+./scripts/ci-gate.py <n> && gh pr merge <n> --squash --delete-branch
 ```
 
 Merge only when the checks in `CONTRIBUTING.md` §5 hold. If a check cannot go

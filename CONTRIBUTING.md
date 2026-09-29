@@ -65,8 +65,9 @@ correction is itself auditable.
 Merging is the agent's call, so the bar has to be written down. Merge only when
 all of these hold:
 
-- [ ] Every required check on the PR is green — read the actual check list, do
-      not assume
+- [ ] Every required check on the PR is green — `./scripts/ci-gate.py <n>` exits
+      0. Do not read the list by eye: `gh pr checks <n> | tail -3` hid a failing
+      job once, and the PR merged red.
 - [ ] `make verify`, `make lint` and `scripts/verify_docs.py` pass locally
 - [ ] The PR body states verified vs. asserted, and lists what is **not** done
 - [ ] `git diff main...HEAD --stat` contains nothing unintended: no secrets, no
