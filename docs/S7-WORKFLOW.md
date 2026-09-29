@@ -49,38 +49,49 @@ Synthetic 500 assets in fixture mode as the committed, CI-safe gate, with a live
 Cloudinary path available as an opt-in script. CI cannot depend on credentials,
 and a load test that needs them will silently stop being run.
 
-## S7.3 — what is and is not established
+## S7.3 — VERIFIED
 
-**Established.** Two Dockerfiles, a compose stack, and `.dockerignore`; the
-backend `CMD` booted locally and `/health` answered; 17 deployment-contract
-specs, each **mutation-tested** — ten deliberate misconfigurations were each
-caught by exactly the spec that claims to catch them:
+Run on the maintainer's host (Apple Silicon, macOS 26.6.2, Docker 29.8.1,
+Compose v5.5.1) on 2026-09-29:
 
-| Injected fault | Caught by |
+```
+docker compose config --quiet     # valid
+docker compose build              # 7m37s
+docker compose up -d --wait       # both services Healthy
+curl -fsS http://localhost:8000/health   # 200, "ONLINE"
+curl http://localhost:3000/              # HTTP 200, 83 787 bytes
+make verify-docker                 # full cycle, exit 0
+```
+
+| Check | Result |
 | :-- | :-- |
-| API URL used the compose service name | browser-resolvability spec |
-| API URL moved to a runtime env var | build-arg spec |
-| frontend waited only for `service_started` | health-ordering spec |
-| a credential made required (`${VAR}`) | no-hard-requirement spec |
-| backend bound `127.0.0.1` | all-interfaces spec |
-| healthcheck probed a non-existent path | route cross-check |
-| healthcheck port ≠ CMD port | port-agreement spec |
-| `backend/.env` removed from the build context | build-context spec |
-| image moved to Python 3.13 | wheel-pin spec |
-| `npm install` instead of `npm ci` | frontend-install spec |
+| Both images build | yes, 7m37s |
+| Backend health | `ONLINE`, all capabilities true |
+| Frontend | HTTP 200, 83 787 bytes, 11ms |
+| Containers healthy | backend and frontend, both `healthy` |
+| Unprivileged | `uid=10001(veritas)` / `uid=10002(veritas)` |
+| Cross-container API | `/v1/projects/p1/summary` returns facts |
 
-**Not established.** That either image **builds**, that the pinned wheels resolve
-for the image's Python, and that `docker compose up` reaches a working demo.
-Docker is not installed on this host, so **the S7.3 exit criterion is UNVERIFIED**
-and `make verify-docker` says so rather than passing quietly. It is deliberately
-not wired into `make verify`, because CI has no daemon and a target that always
-fails there is a target nobody runs.
-
-Run on a host with Docker:
+**The rendered compose config confirms the two build-time traps were avoided:**
 
 ```
-make verify-docker
+NEXT_PUBLIC_API_URL: http://localhost:8000   # published port, not "backend"
+CLOUDINARY_API_KEY: ""                       # empty -> fixture mode, no secrets
 ```
+
+and the built client bundle contains the literal `http://localhost:8000`, so the
+URL really is inlined rather than left to a runtime variable that would have been
+ignored.
+
+**Still not established:** that the images build on a *clean* machine or on
+non-Apple hardware, and that the pinned wheels resolve for `python:3.12-slim` on
+those platforms. One verified host is one data point, and the build took 7m37s,
+so CI is not a reasonable place to check it.
+
+**Note for the next person:** `docker compose` fails with `unknown command` until
+Docker Desktop has been *launched at least once*. The CLI alone does not provide
+the compose plugin — Docker Desktop installs it into `~/.docker/cli-plugins/` on
+startup — so the symptom looks like two separate faults when it is one.
 
 ## Definition of done
 
