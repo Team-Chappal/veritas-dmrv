@@ -72,7 +72,7 @@ rather than quietly fixing it.
   `core.config`); `VERITAS_NO_DOTENV=1` opts out, which is how the test suite
   keeps itself in fixture mode on a machine that has them.
 - `scripts/validate_cloudinary_live.py` exercises the live paths. **It has been
-  run** — 18 pass, 0 fail, 2 skipped (one video asset, one paid-plan feature) —
+  run** — 20 pass, 0 fail, 0 warnings, 1 skipped (`f_pdf`, paid-plan only) —
   and it found six real defects in the transformation grammar that the unit tests
   were green about. Re-run it after touching `core/cloudinary_client.py`; a URL
   that a test asserts the shape of is not a URL anyone has loaded.

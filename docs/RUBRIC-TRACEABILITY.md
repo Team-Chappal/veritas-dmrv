@@ -72,7 +72,7 @@ capability is only partly delivered — says so.
 ### 1. The live paths now run, and the transformation grammar was WRONG
 
 `scripts/validate_cloudinary_live.py` has been run against a real free-tier
-account: **18 checks pass, 0 fail, 2 skipped.** That run is the most valuable
+account: **20 checks pass, 0 fail, 0 warnings, 1 skipped** (`f_pdf`, paid plan only). That run is the most valuable
 thing this project has done, because it disproved a claim the unit tests were
 green about. The composed transformation URLs had never rendered, and the
 defects were only findable against the real API:
@@ -194,6 +194,34 @@ WCAG AAA contrast and the no-colour-alone signalling rule are asserted against
 computed styles and measured boxes, not against CSS class names — a class can be
 overridden later, and a test asserting a class exists would keep passing after
 someone overrode it.
+
+### 3a. The webhook secret, which was empty and is not a small detail
+
+The rotation on 2026-09-29 set `CLOUDINARY_WEBHOOK_SECRET`, and the harness went
+from **19 pass / 0 fail / 1 warn** to **20 pass / 0 fail / 0 warn**.
+
+The warning it removed was this: with the secret empty, the webhook processor
+**ACCEPTED UNVERIFIED NOTIFICATIONS**. Anyone who could reach the route could POST
+a payload and have an unauthenticated request mark an asset as verified — the exact
+failure the signature check exists to prevent, and it was disabled by default
+rather than by accident.
+
+Same shape as the §3 caveat above: the CODE PATH was correct, and the
+CONFIGURATION was what left it open.
+
+### 3b. The C2PA signing key is empty, and that is the honest state
+
+`C2PA_SIGNING_PRIVATE_KEY` used to be set and is now empty. Nothing regressed,
+because **nothing ever signed with it**: the codebase reads it into config and
+reduces it to one boolean, `c2pa_signing_configured`. There is no
+`ClaimGenerator`, no manifest, no certificate.
+
+So the `C2PA_VERIFIED` values in this product come from seeded fixture weights
+and a Cloudinary metadata default, and `/triage/evaluate` returns
+`"C2PA_VERIFIED" if payload.has_c2pa_manifest` — a **client-supplied flag**, not a
+verification. An empty key makes `c2pa_signing_configured` report `false`, which
+is true. That is an open honesty question, not a defect in the rotation, and it
+belongs in front of a judge before they ask about C2PA.
 
 ### 8. The physics HUD refuses to answer when answering would be a guess
 
