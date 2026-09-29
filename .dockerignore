@@ -1,0 +1,43 @@
+# Build context exclusions.
+#
+# The build context is the REPO ROOT, because both Dockerfiles need sibling
+# directories. That makes .dockerignore load-bearing rather than tidy: without
+# it, .git, the USB mirror's worth of history, and the local virtualenv all get
+# shipped to the daemon on every build.
+
+.git
+.gitignore
+.github
+
+# Local virtualenv — large, and wrong for the container's Python version.
+backend/.venv
+backend/**/__pycache__
+backend/**/*.pyc
+backend/.pytest_cache
+backend/.coverage
+backend/htmlcov
+
+# Never bake credentials into an image. backend/.env is gitignored, and this
+# makes that structural rather than a convention.
+backend/.env
+backend/.env.*
+!.env.example
+
+# Frontend
+frontend/node_modules
+frontend/.next
+frontend/test-results
+frontend/playwright-report
+frontend/blob-report
+frontend/.playwright
+
+# Editors, OS, docs
+.DS_Store
+.vscode
+.idea
+*.swp
+
+# Docs are not needed at runtime and the traceability file is large.
+docs/
+*.md
+!backend/requirements.txt

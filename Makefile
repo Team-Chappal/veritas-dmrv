@@ -139,3 +139,19 @@ clean: ## Remove caches and build output
 	find . -name '.pytest_cache' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 	rm -rf backend/.coverage coverage.xml htmlcov frontend/.next
 	@echo "cleaned"
+
+# S7.3. Build the images and bring the stack up, then prove the demo answers.
+# Requires a Docker daemon; it is NOT part of `make verify`, because CI has no
+# daemon and a target that always fails there is a target nobody runs.
+.PHONY: verify-docker
+verify-docker:
+	@command -v docker >/dev/null 2>&1 || { \
+		echo "docker is not installed; S7.3 exit criterion UNVERIFIED on this host"; \
+		echo "  install Docker Desktop, then re-run: make verify-docker"; \
+		exit 1; }
+	docker compose config --quiet
+	docker compose build
+	docker compose up -d --wait
+	@echo "backend health:" && curl -fsS http://localhost:8000/health | head -c 200 && echo
+	@echo "frontend status: $$(curl -o /dev/null -s -w '%{http_code}' http://localhost:3000/)"
+	docker compose down
