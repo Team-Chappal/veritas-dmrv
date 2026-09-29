@@ -73,6 +73,30 @@ export default function Home() {
         {/* Editorial Landing Hero */}
         <HeroSection />
 
+        {/* Live Interactive Verification Sandbox (Input & Output Window for Judges) */}
+        <section
+          id="verification-lab"
+          className="relative scroll-mt-24 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto -mt-6 sm:-mt-10 mb-16 w-full z-20"
+          aria-label="Interactive Verification Sandbox"
+        >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+            <div className="inline-flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span className="font-mono text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                Live Verification Window · Real-Time Input & Output
+              </span>
+            </div>
+            <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+              Interactive Test Suite for Judges & Auditors · 100% In-Browser Execution
+            </span>
+          </div>
+
+          <VerificationConsole />
+        </section>
+
         {/* The Core Epistemological Questions & Veritas Answers */}
         <CoreQuestionsSection />
 
@@ -139,9 +163,7 @@ export default function Home() {
           <SemanticSearch />
 
           {/* Solar Ephemeris & Shadow Coherence HUD */}
-          <VerificationConsole />
-
-      <ForensicPhysicsHUD />
+          <ForensicPhysicsHUD />
 
           {/* Rubric bullet 6: Cryptographic Provenance Panel */}
           <ProvenancePanel />
