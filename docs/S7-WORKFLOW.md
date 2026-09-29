@@ -16,8 +16,8 @@ marked complete rather than re-implemented:
 | 7.8 | Reset `08` §1.2 checkboxes | **Done** — already `[ ]`, with the v1.2.0 correction note |
 | 7.3 | Docker Compose | **Built, unverified** — no Docker daemon on this host |
 | 7.4 | 500-asset load test | **Done** — `docs/LOAD-TEST.md`, 500 assets at 1920×1080 |
-| 7.6 | Rubric matrix with demo timestamps | Partial — traceability exists, timestamps do not |
-| 7.7 | Re-cut 180s pitch to lead with rubric #3/#5 | Pending |
+| 7.6 | Rubric matrix with demo timestamps | **Done** — `docs/15-RUBRIC-TRACEABILITY.md`, generated |
+| 7.7 | Re-cut 180s pitch to lead with rubric #3/#5 | **Done** — `docs/14` v2.0.0, 3 claims removed |
 
 ## Ordering, and why
 
@@ -138,6 +138,56 @@ so CI is not a reasonable place to check it.
 Docker Desktop has been *launched at least once*. The CLI alone does not provide
 the compose plugin — Docker Desktop installs it into `~/.docker/cli-plugins/` on
 startup — so the symptom looks like two separate faults when it is one.
+
+## S7.6 — the matrix is generated, so it cannot drift
+
+`docs/15-RUBRIC-TRACEABILITY.md` is produced by `scripts/gen_rubric_matrix.py`
+from an actual run, not typed. Two things follow from that:
+
+- **The demo timestamps are measured.** `frontend/e2e/rubric-walkthrough.spec.ts`
+  drives the real page and records when each graded surface becomes visible. So
+  the walkthrough is also a **reachability test**: if a component is renamed or
+  unmounted, the spec fails and the matrix cannot name a panel nobody can see.
+- **The generator verifies its own inputs.** Missing component, missing test id
+  or unrecorded surface → it exits non-zero rather than emitting a matrix that
+  points at nothing.
+
+The timestamps are qualified as **time-to-reach, not time-to-present** — 1.2 s for
+the full walkthrough, because scrolling is instant and speaking is not. That is
+the floor, and the *order* is what 7.7 needed.
+
+## S7.7 — three claims did not survive checking
+
+The re-cut leads with rubric #3 and #5 and moved the market hook after the demo.
+But re-cutting surfaced claims that should never have been there:
+
+1. **"142 ms quarantine."** The only `142` in the codebase is
+   `baseline_canopy_pixels: 142100` — a **pixel count**. The slide had read a
+   fixture field as a latency. Measured triage is **1.11 ms**.
+2. **"Shadow azimuth diverges by 170.4°."** Appears in no source file, and ~180
+   is the value for *no observed shadow*, not a divergence. The tolerance is 12°.
+3. **"One-click export an official EUDR Article 9 statutory dossier."**
+   `eudr_compliance_status` is a **hardcoded literal**; the M7 validator is on
+   the cut list. A compliance product claiming compliance it has not checked is
+   the exact failure it exists to catch. The pitch now claims the dossier
+   *format* — including decimal-string vertices so declared precision survives
+   the wire — and disclaims the validation out loud.
+
+**14 specs pin all of it**, each mutation-tested: reintroducing the 142 ms
+figure, the 170.4° figure, the EUDR claim, drifting a measured number away from
+its report, restoring the market hook, or deleting the disclaimer each fail.
+
+Two of those specs were themselves wrong first, and the mutations exposed it
+rather than my noticing:
+
+- The spoken lines are **indented** blockquotes, so `startswith(">")` matched
+  nothing and three claim specs passed against mutations they were meant to
+  catch. There is now a spec asserting the extractor finds the scripts, because
+  an extractor that returns nothing makes every rule below it vacuous.
+- The figure-drift spec checked that a number appeared **anywhere** in the
+  document, so a mutation rewriting the spoken copy passed — the same number was
+  still in the audit table. It now checks the audit table and the spoken script
+  agree **with each other**.
 
 ## Definition of done
 

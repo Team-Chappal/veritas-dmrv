@@ -171,3 +171,13 @@ load-test:
 load-test-quick:
 	PYTHONPATH=backend VERITAS_NO_DOTENV=1 backend/.venv/bin/python scripts/load_test.py \
 		--quick --solar-stress 8 --low-sun 8
+
+# S7.6. Regenerate docs/15-RUBRIC-TRACEABILITY.md. The demo offsets come from
+# the walkthrough spec, which drives the real page -- so the matrix is generated
+# from a run rather than typed from memory, and the generator fails if a
+# component, test id or surface no longer exists.
+.PHONY: rubric-matrix
+rubric-matrix:
+	cd frontend && npx playwright test rubric-walkthrough --reporter=line
+	PYTHONPATH=backend VERITAS_NO_DOTENV=1 backend/.venv/bin/python \
+		scripts/gen_rubric_matrix.py
