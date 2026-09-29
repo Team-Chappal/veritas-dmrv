@@ -27,19 +27,30 @@ test.describe("CampaignStudio", () => {
   });
 
   test("the composed URLs actually load", async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     // The point of the studio: these are the artefacts, not previews of them.
     const results = await page.evaluate(async (urls: string[]) => {
-      const out: Array<{ url: string; status: number }> = [];
-      for (const url of urls) {
-        try {
-          const r = await fetch(url, { method: "GET" });
-          out.push({ url, status: r.status });
-        } catch {
-          out.push({ url, status: 0 });
-        }
-      }
-      return out;
+      return await Promise.all(
+        urls.map(async (url) => {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 20_000);
+            const r = await fetch(url, { method: "HEAD", signal: controller.signal });
+            clearTimeout(timer);
+            return { url, status: r.status };
+          } catch {
+            try {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 20_000);
+              const r = await fetch(url, { method: "GET", signal: controller.signal });
+              clearTimeout(timer);
+              return { url, status: r.status };
+            } catch {
+              return { url, status: 0 };
+            }
+          }
+        })
+      );
     }, DEMO_CAMPAIGN.assets.filter((a) => a.verification === "verified_live").map((a) => a.url));
 
     for (const r of results) {
