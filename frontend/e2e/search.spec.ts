@@ -11,7 +11,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("SemanticSearch", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await page.goto("/", { waitUntil: "domcontentloaded" });
   });
 
   async function search(page: import("@playwright/test").Page, q: string) {
@@ -123,7 +123,7 @@ test.describe("SemanticSearch", () => {
         }),
       })
     );
-    await page.reload({ waitUntil: "networkidle" });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await search(page, "canopy");
     await expect(page.getByTestId("search-source")).toContainText("Fixture");
   });
