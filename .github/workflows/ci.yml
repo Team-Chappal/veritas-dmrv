@@ -123,3 +123,30 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report
           retention-days: 7
+
+  load-test:
+    name: Load test (500 assets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m venv backend/.venv
+          backend/.venv/bin/pip install --upgrade pip
+          backend/.venv/bin/pip install -r backend/requirements.txt
+      - name: Load test
+        # 500 assets at 640x360, both injections on. The quick configuration:
+        # the full-resolution run takes ~8 minutes and belongs on a machine, not
+        # in CI. The point of having it here is that it FAILS LOUDLY -- a
+        # regression that made the corpus quietly all-pass would break the
+        # verdict-coverage assertion rather than passing unnoticed.
+        run: make load-test-quick
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test
+          path: docs/load-test.json
+          retention-days: 7

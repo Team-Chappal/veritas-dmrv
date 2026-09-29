@@ -15,7 +15,7 @@ marked complete rather than re-implemented:
 | 7.5 | Demo fail-safes | **Done** — cache mode (6.11), `e_preview` clip, runbook §4 |
 | 7.8 | Reset `08` §1.2 checkboxes | **Done** — already `[ ]`, with the v1.2.0 correction note |
 | 7.3 | Docker Compose | **Built, unverified** — no Docker daemon on this host |
-| 7.4 | 500-asset load test | Pending |
+| 7.4 | 500-asset load test | **Done** — `docs/LOAD-TEST.md`, 500 assets at 1920×1080 |
 | 7.6 | Rubric matrix with demo timestamps | Partial — traceability exists, timestamps do not |
 | 7.7 | Re-cut 180s pitch to lead with rubric #3/#5 | Pending |
 
@@ -35,6 +35,52 @@ already on the page.
 
 7.6 and 7.7 last because both are claims *about* the finished system. They should
 be written once nothing else can move.
+
+## S7.4 — measured, and the measurement was wrong three times first
+
+500 assets at 1920×1080 through the full local pipeline: **1.07 assets/s,
+end-to-end p95 552 ms, 276 s for 500, peak 218 MB.** Solar triage p50 **1.19 ms**,
+which agrees with the isolated microbenchmark in `LATENCY-BASELINE.md` (1.11 ms)
+now that the methodology is fixed.
+
+Three defects had to be found before those numbers meant anything:
+
+1. **`tracemalloc` was running during the timed loop.** Profiling allocations and
+   timing in one pass inflated the solar stage from 1.115 ms to **3.920 ms** — a
+   3.5× factor, uniform across the distribution, which is the shape of a
+   systematic error rather than a slow tail. It would have shipped as a latency
+   regression that did not exist. Peak memory is now a separate, labelled sample.
+2. **A fixed capture time of 08:15 UTC is physically impossible across the
+   corpus.** The corpus stores a date and no time, and spans 84° of longitude, so
+   at that hour the Brazil site sits at 05:15 local with the sun **15° below the
+   horizon** — and the pipeline correctly answered
+   `QUARANTINE_NIGHTTIME_CAPTURE_ANOMALY` for 7 of 52 assets. The physics was
+   right; the assumption was wrong. Captures are now placed at **local solar
+   noon**, which is valid everywhere in the corpus and is the best-posed moment
+   for shadow geometry.
+3. **The two fault injections selected the same assets** (`i % stride == 0`), so
+   the low-sun abstention pre-empted a third of the quarantine injections: 50
+   faults in, 40 quarantines out, with nothing in the report to explain the ten.
+
+### The finding that shaped the design
+
+The corpus's `|solar_azimuth_error|` **maxes out at 11.4° against a 12°
+tolerance**, so on its own this corpus can *never* quarantine. Its 47
+`QUARANTINE_FRAUD` decisions come from forgery and provenance signals, not from
+solar geometry. A scale test that therefore only measures the pass path is a
+scale test of the pass path — so a configurable fraction gets a large injected
+error, and a further fraction is captured near the horizon to load the
+abstention, which is the product's central claim and cannot be triggered at solar
+noon at all.
+
+17 specs pin all of this, including that **every injected fault becomes exactly
+one quarantine**, that the two selections are disjoint by construction, and that
+abstentions never appear at solar noon.
+
+**Not established:** container-level or multi-process behaviour, the API under
+concurrency (`RATE_LIMIT_PER_MINUTE=60` would bind long before throughput did,
+so reporting that as throughput would be measuring the limiter), and
+registration cost on photographic rather than synthetic imagery.
 
 ## Carried forward — an unverified claim
 

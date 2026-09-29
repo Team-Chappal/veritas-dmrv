@@ -155,3 +155,19 @@ verify-docker:
 	@echo "backend health:" && curl -fsS http://localhost:8000/health | head -c 200 && echo
 	@echo "frontend status: $$(curl -o /dev/null -s -w '%{http_code}' http://localhost:3000/)"
 	docker compose down
+
+# S7.4. 500 assets at full resolution, with both injections on so the
+# quarantine and abstention branches are actually loaded -- the corpus on its
+# own can never quarantine, because its solar errors top out at 11.4 degrees
+# against a 12 degree tolerance.
+#
+# Takes about eight minutes. `load-test-quick` is the CI-sized version.
+.PHONY: load-test
+load-test:
+	PYTHONPATH=backend VERITAS_NO_DOTENV=1 backend/.venv/bin/python scripts/load_test.py \
+		--assets 500 --solar-stress 50 --low-sun 50
+
+.PHONY: load-test-quick
+load-test-quick:
+	PYTHONPATH=backend VERITAS_NO_DOTENV=1 backend/.venv/bin/python scripts/load_test.py \
+		--quick --solar-stress 8 --low-sun 8
