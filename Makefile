@@ -126,14 +126,41 @@ docker: ## Bring up backend + frontend
 # Housekeeping
 # --------------------------------------------------------------------------- #
 
-sync-usb: ## Mirror source to the FAT32 USB volume (excludes heavy dirs)
-	@rsync -av --delete \
-		--exclude '.venv' --exclude 'node_modules' --exclude '.next' \
-		--exclude '__pycache__' --exclude '.git' --exclude '.pytest_cache' \
-		--exclude '.DS_Store' --exclude '._*' \
-		--exclude '.env' --exclude 'backend/.env' --exclude '*.pem' --exclude '*.key' \
-		./ /Volumes/VENTOY/cc/
-	@echo "Synced to /Volumes/VENTOY/cc (note: FAT32 is case-insensitive and ~176x slower)."
+# OPTIONAL, AND NOT PART OF ANY BUILD. The USB volume cannot be relied on -- it
+# is not always connected, and a target that fails when it is absent is a target
+# that trains you to ignore its failures. `make verify` deliberately does not
+# depend on it, and neither does CI.
+#
+# The canonical tree is this APFS clone, and the authoritative copy is GitHub.
+# These are convenience mirrors. Anything that matters belongs in a commit.
+#
+# `.env`, `*.pem` and `*.key` are excluded from BOTH mirrors. Not by convention:
+# the mirrors previously shipped backend/.env, which holds live Cloudinary
+# credentials and a C2PA signing key. Git ignored it; rsync did not.
+MIRROR_EXCLUDES = --exclude '.venv' --exclude 'node_modules' --exclude '.next' \
+	--exclude '__pycache__' --exclude '.git' --exclude '.pytest_cache' \
+	--exclude '.DS_Store' --exclude '._*' \
+	--exclude '.env' --exclude 'backend/.env' --exclude '*.pem' --exclude '*.key'
+
+# The mount check is ONE shell, not a guard line followed by the work.
+# `exit 0` inside a multi-line recipe exits only that line's shell, so make
+# carried straight on to the rsync -- the target printed "not mounted, nothing to
+# do" and then tried anyway. Single if/else, so the work cannot run when the
+# guard says it should not.
+sync-usb: ## Optional: mirror to a FAT32 USB volume, if one is mounted
+	@if [ -d /Volumes/VENTOY/cc ]; then \
+		rsync -av --delete $(MIRROR_EXCLUDES) ./ /Volumes/VENTOY/cc/ && \
+		echo "Synced to /Volumes/VENTOY/cc (FAT32: case-insensitive, ~176x slower)."; \
+	else \
+		echo "USB volume not mounted -- nothing to do, and that is not an error."; \
+		echo "  The working tree and GitHub are the only things that matter."; \
+		echo "  For a mirror needing no external media: make sync-desktop"; \
+	fi
+
+sync-desktop: ## Optional: portable mirror to ~/Desktop/cc, no external media
+	@mkdir -p $(HOME)/Desktop/cc
+	@rsync -av --delete $(MIRROR_EXCLUDES) ./ $(HOME)/Desktop/cc/
+	@echo "Synced to $(HOME)/Desktop/cc"
 
 clean: ## Remove caches and build output
 	find . -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true

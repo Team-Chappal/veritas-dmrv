@@ -250,6 +250,29 @@ rather than my noticing:
   still in the audit table. It now checks the audit table and the spoken script
   agree **with each other**.
 
+## The USB is optional, and it was carrying credentials
+
+`make sync-usb` used to fail when the volume was unmounted. It now exits 0 with
+a message, because **a target that fails when a drive is unplugged is a target
+that trains you to ignore its failures** — including the failures that matter.
+`make sync-desktop` mirrors to `~/Desktop/cc` with no external media.
+
+The mirrors also excluded `.venv` but **not `backend/.env`**, so live Cloudinary
+credentials and a C2PA signing key were on the removable volume from 14 September.
+Git protected the file; rsync did not. Both mirrors now exclude `.env`, `*.pem`
+and `*.key`, and the copies were purged.
+
+Two bugs in the fix, both mine:
+
+- **`exit 0` inside a multi-line recipe exits only that line's shell.** The guard
+  printed "USB volume not mounted, nothing to do" and make then ran the rsync
+  anyway. The mount check is now a single `if/else`, so the work cannot run when
+  the guard says it should not.
+- **The `sync-desktop` target and the mount guard were lost between edits**, and
+  the PR that added the `.env` exclusion *claimed both in its commit message*.
+  The commit carried one line. A commit message is a claim about the change, and
+  this session had just spent itself catching claims that were not true.
+
 ## Definition of done
 
 Every rubric bullet traceable to a component, a demo timestamp, and a passing
