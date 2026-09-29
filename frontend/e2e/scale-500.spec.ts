@@ -168,7 +168,7 @@ test.describe("portfolio grid at 500 assets", () => {
   test.beforeEach(async ({ page }) => {
     await instrument(page);
     await serveAll500(page);
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   test("renders 500 rows and reports the count truthfully", async ({ page }) => {

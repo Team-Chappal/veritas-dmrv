@@ -12,7 +12,7 @@ import { expect, test } from "./fixtures";
 
 test.describe("Design-system rules", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   test("every status carries a text label, not only colour", async ({ page }) => {

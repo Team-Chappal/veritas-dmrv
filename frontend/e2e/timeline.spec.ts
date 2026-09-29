@@ -14,7 +14,7 @@ import { DEMO_SUMMARY, DEMO_TIMELINE } from "@/lib/project-fixture";
 
 test.describe("ProjectTimeline", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   test("renders every epoch in schedule order", async ({ page }) => {
@@ -112,7 +112,7 @@ test.describe("ProjectTimeline", () => {
 
 test.describe("SummaryCard", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   test("every figure links to a source", async ({ page }) => {

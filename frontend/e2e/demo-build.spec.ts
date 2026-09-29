@@ -40,7 +40,7 @@ test.describe("demo build — no API configured", () => {
     // which changed nothing: the variable is baked into the bundle, not read at
     // runtime. A test that appears to arrange a condition it cannot arrange is
     // worse than one that names the condition it is actually in.
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("portfolio-grid")).toBeVisible();
     await page.waitForTimeout(600);
 
@@ -51,7 +51,7 @@ test.describe("demo build — no API configured", () => {
   });
 
   test("every panel still renders and is badged as fixture", async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     for (const id of [
       "portfolio-grid",
       "physics-hud",
@@ -64,7 +64,7 @@ test.describe("demo build — no API configured", () => {
   });
 
   test("the app is usable, not merely visible", async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     // A judge clicking around must get real interaction: filter the grid, pick
     // a hotspot, search. "It loads" is not "it works".
     const firstChip = page.getByTestId("portfolio-grid").locator("button").first();

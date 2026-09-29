@@ -11,7 +11,7 @@ import { expect, test } from "./fixtures";
 
 test.describe("SemanticSearch", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   async function search(page: import("@playwright/test").Page, q: string) {

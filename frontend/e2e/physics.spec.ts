@@ -88,7 +88,7 @@ test.describe("shadow-coherence maths", () => {
 
 test.describe("ForensicPhysicsHUD", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
   });
 
   test("shows a coherent capture as consistent, with its margin", async ({ page }) => {

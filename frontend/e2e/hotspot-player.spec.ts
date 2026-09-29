@@ -65,7 +65,7 @@ test.describe("the captions are real WebVTT", () => {
 
 test.describe("HotspotVideoPlayer", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("hotspot-player")).toBeVisible();
   });
 

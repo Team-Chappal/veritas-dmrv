@@ -62,8 +62,8 @@ export default function CoreQuestionsSection() {
 
             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-500 dark:text-slate-400">
               <span>Gate: 12.0° Tolerance</span>
-              <a href="#physics-hud" className={`${TOUCH_TARGET} inline-flex items-center text-sky-600 dark:text-telemetry font-semibold hover:underline`}>
-                Test Compass →
+              <a href="/console#console-heading" className={`${TOUCH_TARGET} inline-flex items-center text-sky-600 dark:text-telemetry font-semibold hover:underline`}>
+                Test Solar Compass →
               </a>
             </div>
           </article>
@@ -101,7 +101,7 @@ export default function CoreQuestionsSection() {
 
             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-500 dark:text-slate-400">
               <span>Eq: Chave 2014 (0.0673)</span>
-              <a href="#impact-studio" className={`${TOUCH_TARGET} inline-flex items-center text-emerald-600 dark:text-emerald-400 font-semibold hover:underline`}>
+              <a href="/console#impact-heading" className={`${TOUCH_TARGET} inline-flex items-center text-emerald-600 dark:text-emerald-400 font-semibold hover:underline`}>
                 Scrub Split Slider →
               </a>
             </div>
@@ -140,7 +140,7 @@ export default function CoreQuestionsSection() {
 
             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-mono text-slate-500 dark:text-slate-400">
               <span>Standard: C2PA v1.4</span>
-              <a href="#provenance-panel" className={`${TOUCH_TARGET} inline-flex items-center text-purple-600 dark:text-purple-400 font-semibold hover:underline`}>
+              <a href="/console#provenance-heading" className={`${TOUCH_TARGET} inline-flex items-center text-purple-600 dark:text-purple-400 font-semibold hover:underline`}>
                 Inspect Root Hash →
               </a>
             </div>

@@ -58,7 +58,7 @@ test.describe("live ticker does not shift layout", () => {
       }).observe({ type: "layout-shift", buffered: true });
     });
 
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("metric-ticker")).toBeVisible();
 
     const first = await page.getByTestId("ticker-value-assets").innerText();
@@ -84,7 +84,7 @@ test.describe("live ticker does not shift layout", () => {
   });
 
   test("the strip's box is identical before and after a tick", async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     const grid = page.getByTestId("ticker-grid");
     const before = await grid.boundingBox();
     await page.waitForTimeout(TICK_MS * 2 + 300);
@@ -94,7 +94,7 @@ test.describe("live ticker does not shift layout", () => {
   });
 
   test("figures use tabular numerals, so digits share an advance width", async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     const v = page.getByTestId("ticker-value-assets");
     const style = await v.evaluate((el) => getComputedStyle(el).fontVariantNumeric);
     expect(style).toMatch(/tabular-nums/);
@@ -104,7 +104,7 @@ test.describe("live ticker does not shift layout", () => {
     // Tabular figures stop digits changing width; they do not stop a longer
     // number from needing more room. The min-width is what actually prevents
     // the reflow, so its presence is asserted.
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     const reserved = await page
       .getByTestId("ticker-value-assets")
       .evaluate((el) => (el as HTMLElement).style.minWidth);
@@ -123,7 +123,7 @@ test.describe("live ticker does not shift layout", () => {
     // its neighbours each carry their own `goto`, so without one here the page
     // was about:blank and the locator waited out the full 30s timeout -- which
     // said nothing whatsoever about the video.
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     const wrapper = page.getByTestId("hotspot-frame");
     const box = await wrapper.boundingBox();
     expect(box!.height, "video wrapper has no height before metadata").toBeGreaterThan(20);
@@ -140,7 +140,7 @@ test.describe("live ticker does not shift layout", () => {
   });
 
   test("the ticker labels itself as a demonstration", async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("ticker-source")).toContainText(/Demonstration/i);
   });
 });

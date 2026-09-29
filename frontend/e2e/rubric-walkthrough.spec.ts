@@ -47,7 +47,7 @@ test.describe("rubric walkthrough", () => {
     test.setTimeout(120_000);
     await mkdir(OUT_DIR, { recursive: true });
 
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.goto("/console", { waitUntil: "domcontentloaded" });
     await page.evaluate(() => document.fonts.ready);
 
     const started = Date.now();

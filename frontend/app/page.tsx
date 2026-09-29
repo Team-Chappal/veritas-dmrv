@@ -1,83 +1,28 @@
-import CampaignStudio from "@/components/CampaignStudio";
 import ConsoleHeaderSection from "@/components/ConsoleHeaderSection";
 import CoreQuestionsSection from "@/components/CoreQuestionsSection";
-import FeaturesBentoSection from "@/components/FeaturesBentoSection";
 import FooterSection from "@/components/FooterSection";
-import ForensicPhysicsHUD from "@/components/ForensicPhysicsHUD";
 import VerificationConsole from "@/components/VerificationConsole";
 import HeroSection from "@/components/HeroSection";
-import HotspotVideoPlayer from "@/components/HotspotVideoPlayer";
-import MethodologySection from "@/components/MethodologySection";
-import MetricTicker from "@/components/MetricTicker";
 import Navbar from "@/components/Navbar";
-import OfflineResilience from "@/components/OfflineResilience";
-import PortfolioGrid from "@/components/PortfolioGrid";
-import ProjectTimeline from "@/components/ProjectTimeline";
-import ProofOfImpactStudio from "@/components/ProofOfImpactStudio";
-import ProvenancePanel from "@/components/ProvenancePanel";
-import SemanticSearch from "@/components/SemanticSearch";
 import TechStackSection from "@/components/TechStackSection";
 import WorkflowSection from "@/components/WorkflowSection";
-
-type Stage = {
-  id: string;
-  title: string;
-  rubric: string;
-  status: "built" | "in-progress" | "planned";
-  detail: string;
-};
-
-const STAGES: Stage[] = [
-  {
-    id: "S1",
-    title: "Numerical core",
-    rubric: "verification",
-    status: "built",
-    detail:
-      "pvlib solar-ephemeris shadow coherence, Chave 2014 allometry, VM0047 " +
-      "uncertainty, pHash dedup. 105 tests, 94% coverage.",
-  },
-  {
-    id: "S2",
-    title: "Computer vision",
-    rubric: "before / after",
-    status: "planned",
-    detail:
-      "SIFT + USAC_MAGSAC++ homography, TPS parallax fallback, radiometric " +
-      "normalization, GLI + Otsu canopy delta.",
-  },
-  {
-    id: "S3",
-    title: "Enrichment & semantics",
-    rubric: "AI tagging, search",
-    status: "planned",
-    detail:
-      "Auto-tagging from image content, semantic discovery, grounded project " +
-      "summaries. Closes the largest gap in the original specification.",
-  },
-];
-
-const STATUS_STYLE: Record<Stage["status"], string> = {
-  built: "border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-verified/50 dark:bg-verified/10 dark:text-verified",
-  "in-progress": "border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  planned: "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400",
-};
+import { TOUCH_TARGET } from "@/components/primitives";
 
 export default function Home() {
   return (
     <div className="flex min-h-screen flex-col bg-[#F8FAFC] dark:bg-canvas text-slate-900 dark:text-slate-100 transition-colors duration-200">
-      {/* Futuristic Floating Command Bar */}
+      {/* Floating Futuristic Command Bar */}
       <Navbar />
 
       <main className="flex-1">
         {/* Editorial Landing Hero */}
         <HeroSection />
 
-        {/* Live Interactive Verification Sandbox (Input & Output Window for Judges) */}
+        {/* Live System Console (Interactive Input & Output Sandbox for Judges) */}
         <section
           id="verification-lab"
           className="relative scroll-mt-24 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto -mt-6 sm:-mt-10 mb-16 w-full z-20"
-          aria-label="Interactive Verification Sandbox"
+          aria-label="Interactive System Console"
         >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
             <div className="inline-flex items-center gap-2">
@@ -86,97 +31,73 @@ export default function Home() {
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
               </span>
               <span className="font-mono text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                Live Verification Window · Real-Time Input & Output
+                Live System Console · Real-Time Input & Output
               </span>
             </div>
-            <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-              Interactive Test Suite for Judges & Auditors · 100% In-Browser Execution
-            </span>
+            <a
+              href="/console"
+              className="inline-flex items-center gap-1 font-mono text-xs text-sky-600 dark:text-telemetry font-semibold hover:underline"
+            >
+              <span>Open Dedicated Cockpit (/console) ↗</span>
+            </a>
           </div>
 
           <VerificationConsole />
         </section>
 
-        {/* The Core Epistemological Questions & Veritas Answers */}
+        {/* The Core Epistemological Questions & Veritas Answers (Architecture) */}
         <CoreQuestionsSection />
-
-        {/* Pure Mathematical Methodology */}
-        <MethodologySection />
 
         {/* 5-Stage Scientific Architecture Workflow */}
         <WorkflowSection />
 
-        {/* Core Forensic Capabilities */}
-        <FeaturesBentoSection />
-
         {/* Architecture & Engineering Tech Stack */}
         <TechStackSection />
 
-        {/* Stage 6 Live Audit Command Center */}
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-4 sm:px-6 lg:px-8 py-12">
-          <ConsoleHeaderSection />
+        {/* Dedicated Full Console Launch Banner */}
+        <section aria-label="Full Forensic Console Launch" className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-16">
+          <div className="relative overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white p-8 sm:p-12 shadow-xl">
+            <div className="absolute top-0 right-0 -mt-10 -mr-10 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 -mb-10 -ml-10 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
 
-          {/* Development Roadmap Stages */}
-          <section aria-label="Build stages" className="grid gap-4 sm:grid-cols-3">
-            {STAGES.map((stage) => (
-              <article
-                key={stage.id}
-                className="flex flex-col gap-3 rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white/95 dark:bg-surface/95 p-5 shadow-xs"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-sm font-bold text-slate-900 dark:text-white">
-                    {stage.id}
-                  </span>
-                  <span
-                    className={`rounded-full border px-2.5 py-0.5 font-mono text-[11px] font-semibold uppercase ${STATUS_STYLE[stage.status]}`}
-                  >
-                    {stage.status === "built" ? "✓ done" : stage.status}
-                  </span>
-                </div>
-                <h2 className="text-base font-bold text-slate-900 dark:text-white">{stage.title}</h2>
-                <p className="font-mono text-[11px] uppercase tracking-wider text-sky-700 dark:text-telemetry font-semibold">
-                  {stage.rubric}
-                </p>
-                <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400">
-                  {stage.detail}
-                </p>
-              </article>
-            ))}
-          </section>
+            <div className="relative z-10 max-w-3xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-sky-400/10 px-3 py-1 font-mono text-xs font-semibold text-sky-300 mb-4">
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-400 animate-pulse" />
+                <span>STAGE 6 FORENSIC AUDIT SUITE</span>
+              </div>
 
-          {/* Rubric intro & timeline */}
-          <ProjectTimeline />
+              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-4">
+                Dedicated Multi-Instrument Forensic Console
+              </h2>
 
-          {/* Rubric bullet 1: Portfolio Grid */}
-          <PortfolioGrid />
+              <p className="text-base sm:text-lg text-slate-300 leading-relaxed mb-8">
+                Judges and auditors can enter the full cockpit workspace with dedicated tabs for Before/After Homography Sliders, Telemetry-Synced Video Players, 500-Asset Corpus Filtering, Semantic Search, and C2PA Provenance.
+              </p>
 
-          {/* Rubric bullet 2: Hotspot Video Player */}
-          <HotspotVideoPlayer />
+              <div className="flex flex-wrap items-center gap-4">
+                <a
+                  href="/console"
+                  className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl bg-white px-6 py-3.5 text-sm sm:text-base font-bold text-slate-900 hover:bg-slate-100 transition-all shadow-lg`}
+                >
+                  <span>Launch Forensic Console (/console)</span>
+                  <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </a>
 
-          {/* Rubric bullet 3: Before / After Proof of Impact Studio */}
-          <ProofOfImpactStudio />
-
-          {/* Rubric bullet 4: Campaign Studio */}
-          <CampaignStudio />
-
-          {/* Rubric bullet 5: Semantic Search */}
-          <SemanticSearch />
-
-          {/* Solar Ephemeris & Shadow Coherence HUD */}
-          <ForensicPhysicsHUD />
-
-          {/* Rubric bullet 6: Cryptographic Provenance Panel */}
-          <ProvenancePanel />
-
-          {/* Live Telemetry Metric Ticker */}
-          <MetricTicker />
-
-          {/* Offline Resilience & Data Mode Switcher */}
-          <OfflineResilience />
-        </div>
+                <a
+                  href="#verification-lab"
+                  className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl border border-slate-700 bg-slate-800/80 px-5 py-3.5 text-sm sm:text-base font-medium text-slate-200 hover:bg-slate-700 hover:text-white transition-colors`}
+                >
+                  <span>Quick Solar & Biomass Sandbox ↑</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
 
-      {/* Comprehensive Footer & Open-Source Specifications */}
+      {/* Comprehensive Footer */}
       <FooterSection />
     </div>
   );

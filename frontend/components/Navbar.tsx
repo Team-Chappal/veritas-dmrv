@@ -34,41 +34,35 @@ export default function Navbar() {
           aria-label="Main Navigation"
         >
           <a
-            href="#verification-lab"
-            className={`${TOUCH_TARGET} inline-flex items-center gap-1.5 px-3 font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors rounded-md`}
+            href="/"
+            className={`${TOUCH_TARGET} inline-flex items-center px-3 hover:text-slate-900 dark:hover:text-white transition-colors rounded-md`}
           >
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
-            <span>Verification Lab</span>
+            Overview
           </a>
           <a
-            href="#questions"
+            href="/#questions"
             className={`${TOUCH_TARGET} inline-flex items-center px-3 hover:text-slate-900 dark:hover:text-white transition-colors rounded-md`}
           >
             Core Questions
           </a>
           <a
-            href="#methodology"
-            className={`${TOUCH_TARGET} inline-flex items-center px-3 hover:text-slate-900 dark:hover:text-white transition-colors rounded-md`}
-          >
-            Methodology
-          </a>
-          <a
-            href="#workflow"
+            href="/#workflow"
             className={`${TOUCH_TARGET} inline-flex items-center px-3 hover:text-slate-900 dark:hover:text-white transition-colors rounded-md`}
           >
             Workflow
           </a>
           <a
-            href="#techstack"
+            href="/#techstack"
             className={`${TOUCH_TARGET} inline-flex items-center px-3 hover:text-slate-900 dark:hover:text-white transition-colors rounded-md`}
           >
             Tech Stack
           </a>
           <a
-            href="#audit-console"
-            className={`${TOUCH_TARGET} inline-flex items-center px-3 text-sky-600 dark:text-telemetry font-semibold hover:underline rounded-md`}
+            href="/console"
+            className={`${TOUCH_TARGET} inline-flex items-center gap-1.5 px-3 font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors rounded-md`}
           >
-            Audit Console
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
+            <span>Forensic Console</span>
           </a>
         </nav>
 
@@ -119,12 +113,12 @@ export default function Navbar() {
             </svg>
           </a>
 
-          {/* Launch Verification Lab CTA */}
+          {/* Launch Forensic Console CTA */}
           <a
-            href="#verification-lab"
+            href="/console"
             className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl bg-slate-900 dark:bg-white px-4 py-2.5 text-xs sm:text-sm font-semibold text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-sm`}
           >
-            Verify Claims ↗
+            Launch Console ↗
           </a>
         </div>
       </div>
