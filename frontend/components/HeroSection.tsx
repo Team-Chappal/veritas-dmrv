@@ -44,10 +44,10 @@ export default function HeroSection() {
           {/* Interactive CTAs */}
           <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 mb-14 w-full">
             <a
-              href="#audit-console"
+              href="#verification-lab"
               className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl bg-slate-900 dark:bg-white px-6 py-3 text-sm sm:text-base font-semibold text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-md`}
             >
-              <span>Explore Live Audit Console</span>
+              <span>Verify Claim (Live Input & Output)</span>
               <svg className="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
               </svg>

@@ -2,6 +2,7 @@ import { TOUCH_TARGET } from "./primitives";
 
 export default function ConsoleHeaderSection() {
   const tools = [
+    { label: "Verification Lab", href: "#verification-lab" },
     { label: "Solar Physics HUD", href: "#physics-heading" },
     { label: "Impact Split Slider", href: "#impact-heading" },
     { label: "Hotspot Video", href: "#hotspot-heading" },

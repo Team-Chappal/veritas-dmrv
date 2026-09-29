@@ -34,6 +34,13 @@ export default function Navbar() {
           aria-label="Main Navigation"
         >
           <a
+            href="#verification-lab"
+            className={`${TOUCH_TARGET} inline-flex items-center gap-1.5 px-3 font-semibold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors rounded-md`}
+          >
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
+            <span>Verification Lab</span>
+          </a>
+          <a
             href="#questions"
             className={`${TOUCH_TARGET} inline-flex items-center px-3 hover:text-slate-900 dark:hover:text-white transition-colors rounded-md`}
           >
@@ -112,12 +119,12 @@ export default function Navbar() {
             </svg>
           </a>
 
-          {/* Launch Console CTA */}
+          {/* Launch Verification Lab CTA */}
           <a
-            href="#audit-console"
+            href="#verification-lab"
             className={`${TOUCH_TARGET} inline-flex items-center justify-center rounded-xl bg-slate-900 dark:bg-white px-4 py-2.5 text-xs sm:text-sm font-semibold text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-sm`}
           >
-            Launch Console
+            Verify Claims ↗
           </a>
         </div>
       </div>
