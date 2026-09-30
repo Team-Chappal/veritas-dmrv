@@ -44,7 +44,7 @@ export default function FooterSection() {
               {docLinks.map((d) => (
                 <li key={d.file}>
                   <a
-                    href={`https://github.com/j4yop/veritas-dmrv/blob/main/${d.file}`}
+                    href={`https://github.com/Team-Chappal/veritas-dmrv/blob/main/${d.file}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={`${TOUCH_TARGET} inline-flex items-center hover:text-slate-900 dark:hover:text-white transition-colors hover:underline`}
@@ -100,7 +100,7 @@ export default function FooterSection() {
               </p>
               <div className="pt-2">
                 <a
-                  href="https://github.com/j4yop/veritas-dmrv"
+                  href="https://github.com/Team-Chappal/veritas-dmrv"
                   target="_blank"
                   rel="noopener noreferrer"
                   className={`${TOUCH_TARGET} inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 font-mono text-xs font-semibold text-slate-800 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white hover:border-slate-400 transition-colors`}

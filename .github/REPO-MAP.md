@@ -1,6 +1,6 @@
 # Repository Map
 
-**`j4yop/veritas-dmrv`** — VERITAS dMRV, an AI-powered impact & sustainability
+**`Team-Chappal/veritas-dmrv`** — VERITAS dMRV, an AI-powered impact & sustainability
 media intelligence platform.
 
 Built for **Code Cubicle 6.0 — Problem Statement 02 (Cloudinary)**.

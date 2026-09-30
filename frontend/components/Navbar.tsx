@@ -102,7 +102,7 @@ export default function Navbar() {
 
           {/* GitHub Link */}
           <a
-            href="https://github.com/j4yop/veritas-dmrv"
+            href="https://github.com/Team-Chappal/veritas-dmrv"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="GitHub Repository"

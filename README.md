@@ -1,8 +1,8 @@
 # VERITAS dMRV · Planetary Ground Truth & Forensic Media Intelligence
 
-[![Code Cubicle 6.0](https://img.shields.io/badge/Hackathon-Code%20Cubicle%206.0-blue.svg)](https://github.com/j4yop/veritas-dmrv)
+[![Code Cubicle 6.0](https://img.shields.io/badge/Hackathon-Code%20Cubicle%206.0-blue.svg)](https://github.com/Team-Chappal/veritas-dmrv)
 [![Problem Statement 02](https://img.shields.io/badge/Challenge-PS02%20Cloudinary%20Media%20Intelligence-8A2BE2.svg)](https://cloudinary.com)
-[![CI Gate](https://github.com/j4yop/veritas-dmrv/actions/workflows/ci.yml/badge.svg)](https://github.com/j4yop/veritas-dmrv/actions)
+[![CI Gate](https://github.com/Team-Chappal/veritas-dmrv/actions/workflows/ci.yml/badge.svg)](https://github.com/Team-Chappal/veritas-dmrv/actions)
 [![Backend Tests](https://img.shields.io/badge/Pytest-759%20Passing%20(95%25%20Coverage)-emerald.svg)](backend/tests)
 [![Playwright E2E](https://img.shields.io/badge/Playwright-214%20Specs%20Passing-emerald.svg)](frontend/e2e)
 [![Zero Key Mode](https://img.shields.io/badge/Execution-Zero--Key%20In--Browser%20Deterministic-sky.svg)](https://veritas-dmrv.vercel.app/console)
@@ -15,9 +15,9 @@
 
 ### Quick Links
 
-- 🌐 **Live Website**: [https://veritas-dmrv.vercel.app](https://veritas-dmrv.vercel.app)
+- 🌐 **Live Website**: [https://veritas-dmrv.vercel.app/](https://veritas-dmrv.vercel.app/)
 - 🎛️ **Dedicated Judge Console**: [https://veritas-dmrv.vercel.app/console](https://veritas-dmrv.vercel.app/console)
-- 📦 **GitHub Repository**: [https://github.com/j4yop/veritas-dmrv](https://github.com/j4yop/veritas-dmrv)
+- 📦 **GitHub Repository**: [https://github.com/Team-Chappal/veritas-dmrv](https://github.com/Team-Chappal/veritas-dmrv)
 - 📑 **Rubric Traceability Matrix**: [`docs/15-RUBRIC-TRACEABILITY.md`](docs/15-RUBRIC-TRACEABILITY.md)
 
 ---
@@ -147,7 +147,7 @@ VERITAS dMRV is engineered for **Zero-Key Determinism**: a judge or auditor open
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/j4yop/veritas-dmrv.git
+git clone https://github.com/Team-Chappal/veritas-dmrv.git
 cd veritas-dmrv
 
 # 2. Run documentation and claim verification (zero external dependencies)
